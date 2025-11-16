@@ -67,10 +67,3 @@ target_compile_options(pico2w_bt_a2dp_receiver PRIVATE
     -Wextra
     -O2
 )
-
-# BLE機能を無効化（Classic Bluetoothのみ使用）
-target_compile_definitions(pico2w_bt_a2dp_receiver PRIVATE
-    ENABLE_BLE=0
-    ENABLE_LE_PERIPHERAL=0
-    ENABLE_LE_CENTRAL=0
-)
