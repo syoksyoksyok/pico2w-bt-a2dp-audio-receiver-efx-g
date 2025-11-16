@@ -40,8 +40,8 @@
 // BTstack configuration
 // ====================================================================================
 
-// HCI ACL buffer size
-#define HCI_ACL_PAYLOAD_SIZE (1021 + 4)
+// HCI ACL buffer size（RAM節約のため削減）
+#define HCI_ACL_PAYLOAD_SIZE (512 + 4)
 
 // HCI buffer configuration for CYW43
 #define HCI_OUTGOING_PRE_BUFFER_SIZE 4
@@ -53,10 +53,10 @@
 // ATT DB size (required for BLE)
 #define MAX_ATT_DB_SIZE 512
 
-// Logging
-#define ENABLE_LOG_INFO
+// Logging（RAM節約のため最小限に）
+// #define ENABLE_LOG_INFO
 #define ENABLE_LOG_ERROR
-#define ENABLE_PRINTF_HEXDUMP
+#define ENABLE_PRINTF_HEXDUMP  // HCI dump requires this
 
 // ====================================================================================
 // Port specific configuration

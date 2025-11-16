@@ -72,7 +72,8 @@
 
 // リングバッファサイズ（サンプル数）
 // 大きいほど安定するが、遅延も増える
-#define AUDIO_BUFFER_SIZE    (AUDIO_SAMPLE_RATE * 2)  // 2秒分
+// RAM制約のため0.5秒に削減
+#define AUDIO_BUFFER_SIZE    (AUDIO_SAMPLE_RATE / 2)  // 0.5秒分
 
 // DMA バッファサイズ（サンプル数）
 #define DMA_BUFFER_SIZE      512
@@ -85,8 +86,8 @@
 // デバッグログ設定
 // ============================================================================
 
-// デバッグログを有効化
-#define ENABLE_DEBUG_LOG     1
+// デバッグログを有効化（RAM節約のため無効化）
+#define ENABLE_DEBUG_LOG     0
 
 // バッファ状態のログ出力間隔（ミリ秒）
 #define BUFFER_STATUS_LOG_INTERVAL_MS  5000
