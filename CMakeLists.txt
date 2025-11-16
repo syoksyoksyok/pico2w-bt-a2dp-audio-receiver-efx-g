@@ -55,3 +55,8 @@ target_compile_options(pico2w_bt_a2dp_receiver PRIVATE
     -Wextra
     -O2
 )
+
+# BLEを完全に無効化
+target_compile_definitions(pico2w_bt_a2dp_receiver PRIVATE
+    ENABLE_CLASSIC=1
+)
