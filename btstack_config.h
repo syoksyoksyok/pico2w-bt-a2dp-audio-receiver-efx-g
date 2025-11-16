@@ -18,6 +18,9 @@
 // BLE must be enabled for Pico W BTstack even if we only use Classic Bluetooth
 #define ENABLE_BLE
 
+// Disable BLE Privacy features to avoid le_advertisements_state errors
+#undef ENABLE_LE_PRIVACY_ADDRESS_RESOLUTION
+
 // ====================================================================================
 // Bluetooth profiles
 // ====================================================================================
