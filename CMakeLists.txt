@@ -1,13 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
-# Pico SDK のパスを設定（環境変数 PICO_SDK_PATH から取得）
-set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
-
-# BTstack を有効化
-set(PICO_BTSTACK_PATH ${PICO_SDK_PATH}/lib/btstack)
-
 # Pico SDK を初期化
-include(${PICO_SDK_PATH}/external/pico_sdk_import.cmake)
+include($ENV{PICO_SDK_PATH}/external/pico_sdk_import.cmake)
 
 project(pico2w_bt_a2dp_receiver C CXX ASM)
 
@@ -27,7 +21,9 @@ add_executable(pico2w_bt_a2dp_receiver
 
 # インクルードディレクトリ
 target_include_directories(pico2w_bt_a2dp_receiver PRIVATE
-    ${CMAKE_CURRENT_LIST_DIR}/src
+    ${CMAKE_CURRENT_LIST_DIR}        # btstack_config.h 用
+    ${CMAKE_CURRENT_LIST_DIR}/src    # プロジェクトのヘッダー用
+    $ENV{PICO_SDK_PATH}/lib/btstack/src/classic  # BTstack classic headers
 )
 
 # リンクするライブラリ
@@ -35,15 +31,15 @@ target_link_libraries(pico2w_bt_a2dp_receiver
     pico_stdlib
     pico_cyw43_arch_none
     pico_btstack_classic
-    pico_btstack_ble
+    # pico_btstack_ble  # BLE は不要（A2DP のみ使用）
     pico_btstack_cyw43
     pico_btstack_sbc_encoder
     pico_btstack_sbc_decoder
-    hardware_i2s
     hardware_dma
     hardware_pwm
     hardware_pio
     hardware_clocks
+    hardware_irq
 )
 
 # USB シリアル出力を有効化（デバッグログ用）
