@@ -46,10 +46,11 @@
 #define NVM_NUM_LINK_KEYS 2
 
 // ============================================================================
-// Disable Unused Features
+// Logging and Debug
 // ============================================================================
 
 #define ENABLE_LOG_INFO
 #define ENABLE_LOG_ERROR
+#define ENABLE_PRINTF_HEXDUMP
 
 #endif // BTSTACK_CONFIG_H
