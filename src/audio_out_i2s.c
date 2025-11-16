@@ -10,19 +10,41 @@
 #include "config.h"
 #include <stdio.h>
 
-void audio_out_i2s_init(uint32_t sample_rate, uint8_t bits_per_sample) {
+bool audio_out_i2s_init(uint32_t sample_rate, uint8_t bits_per_sample, uint8_t channels) {
     (void)sample_rate;
     (void)bits_per_sample;
+    (void)channels;
     printf("I2S output is not available in SDK 2.2.0 - using PWM instead\n");
+    return false;  // I2S not available
 }
 
-void audio_out_i2s_write(const int16_t *samples, size_t sample_count) {
-    (void)samples;
-    (void)sample_count;
+uint32_t audio_out_i2s_write(const int16_t *pcm_data, uint32_t num_samples) {
+    (void)pcm_data;
+    (void)num_samples;
+    return 0;  // No samples written
+}
+
+uint32_t audio_out_i2s_get_free_space(void) {
+    return 0;  // No buffer available
+}
+
+uint32_t audio_out_i2s_get_buffered_samples(void) {
+    return 0;  // No buffer available
+}
+
+void audio_out_i2s_start(void) {
     // No-op: I2S not available
 }
 
-void audio_out_i2s_set_volume(uint8_t volume_percent) {
-    (void)volume_percent;
+void audio_out_i2s_stop(void) {
     // No-op: I2S not available
+}
+
+void audio_out_i2s_clear_buffer(void) {
+    // No-op: I2S not available
+}
+
+void audio_out_i2s_get_stats(uint32_t *underruns, uint32_t *overruns) {
+    if (underruns) *underruns = 0;
+    if (overruns) *overruns = 0;
 }
