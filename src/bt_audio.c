@@ -76,7 +76,7 @@ bool bt_audio_init(void) {
     memset(sdp_avdtp_sink_service_buffer, 0, sizeof(sdp_avdtp_sink_service_buffer));
     a2dp_sink_create_sdp_record(sdp_avdtp_sink_service_buffer,
                                  0x10001,
-                                 AVDTP_SINK_SF_PLAYER | AVDTP_SINK_SF_AMPLIFIER,
+                                 AVDTP_SINK_FEATURE_MASK_SPEAKER | AVDTP_SINK_FEATURE_MASK_AMPLIFIER,
                                  NULL, NULL);
     sdp_register_service(sdp_avdtp_sink_service_buffer);
 
