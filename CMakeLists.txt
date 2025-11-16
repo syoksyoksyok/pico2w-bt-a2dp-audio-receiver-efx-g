@@ -1,10 +1,10 @@
 cmake_minimum_required(VERSION 3.13)
 
+# Pico 2W (RP2350) をターゲットボードとして設定（SDK初期化の前に設定が必要）
+set(PICO_BOARD pico2_w)
+
 # Pico SDK のパスを設定（環境変数 PICO_SDK_PATH から取得）
 set(PICO_SDK_PATH $ENV{PICO_SDK_PATH})
-
-# Pico 2W (RP2350) をターゲットボードとして設定
-set(PICO_BOARD pico2_w CACHE STRING "Board type")
 
 # BTstack を有効化
 set(PICO_BTSTACK_PATH ${PICO_SDK_PATH}/lib/btstack)
