@@ -43,7 +43,7 @@ target_link_libraries(pico2w_bt_a2dp_receiver
     pico_stdlib
     pico_cyw43_arch_none
     pico_btstack_classic
-    # pico_btstack_ble  # BLE無効化（Classic Bluetoothのみ使用）
+    pico_btstack_ble  # CYW43ドライバーが必要とするため有効化（SDK 2.2.0パッチ済み）
     pico_btstack_cyw43
     pico_btstack_sbc_encoder
     pico_btstack_sbc_decoder
