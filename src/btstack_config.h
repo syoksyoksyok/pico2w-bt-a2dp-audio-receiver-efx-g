@@ -45,6 +45,10 @@
 // Link Key database for pairing
 #define NVM_NUM_LINK_KEYS 2
 
+// CYW43 (Pico W/2W wireless chip) specific settings
+#define HCI_OUTGOING_PRE_BUFFER_SIZE 4
+#define HCI_ACL_CHUNK_SIZE_ALIGNMENT 4
+
 // ============================================================================
 // Logging and Debug
 // ============================================================================
