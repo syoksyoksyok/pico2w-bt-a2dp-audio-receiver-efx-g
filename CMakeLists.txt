@@ -36,6 +36,7 @@ add_executable(pico2w_bt_a2dp_receiver
 # インクルードディレクトリ
 target_include_directories(pico2w_bt_a2dp_receiver PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
+    ${PICO_SDK_PATH}/lib/btstack/src
 )
 
 # リンクするライブラリ
