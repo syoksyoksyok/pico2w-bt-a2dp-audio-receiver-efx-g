@@ -1,9 +1,7 @@
 cmake_minimum_required(VERSION 3.13)
 
 # Pico 2W (RP2350 + CYW43) 設定
-# カスタムボード定義を使用
 set(PICO_BOARD pico2_w)
-set(PICO_BOARD_HEADER_DIRS ${CMAKE_CURRENT_LIST_DIR}/boards)
 
 # picotoolのビルドをスキップ（mbedtlsエラー回避）
 set(SKIP_PICO_PICOTOOL 1)
