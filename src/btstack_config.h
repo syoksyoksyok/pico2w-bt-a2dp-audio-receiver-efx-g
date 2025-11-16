@@ -42,6 +42,9 @@
 #define MAX_NR_WHITELIST_ENTRIES 1
 #define MAX_NR_LE_DEVICE_DB_ENTRIES 0
 
+// Link Key database for pairing
+#define NVM_NUM_LINK_KEYS 2
+
 // ============================================================================
 // Disable Unused Features
 // ============================================================================
