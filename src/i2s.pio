@@ -1,5 +1,7 @@
 ;
 ; I2S Audio Output using PIO
+; Optimized version using loops to fit within 32 instruction limit
+;
 ; Outputs stereo 16-bit audio data to an I2S DAC (e.g., PCM5102)
 ;
 ; Pin assignments:
@@ -11,52 +13,25 @@
 ;   - LRCLK: 0 = Left channel, 1 = Right channel
 ;   - Data is output MSB first
 ;   - Data transitions on falling edge of BCLK
-;   - 32 BCLK cycles per channel (16 bits data + padding)
 ;
 
 .program i2s_output
-.side_set 2 opt                    ; side_set for BCLK and LRCLK
+.side_set 2
 
 .wrap_target
-    ; Left channel (LRCLK = 0)
-    set pins, 0         side 0b00  ; LRCLK=0, BCLK=0
-    out pins, 1         side 0b01  ; Output bit, LRCLK=0, BCLK=1
-    out pins, 1         side 0b00  ; Output bit, LRCLK=0, BCLK=0
-    out pins, 1         side 0b01
-    out pins, 1         side 0b00
-    out pins, 1         side 0b01
-    out pins, 1         side 0b00
-    out pins, 1         side 0b01
-    out pins, 1         side 0b00
-    out pins, 1         side 0b01
-    out pins, 1         side 0b00
-    out pins, 1         side 0b01
-    out pins, 1         side 0b00
-    out pins, 1         side 0b01
-    out pins, 1         side 0b00
-    out pins, 1         side 0b01
-    out pins, 1         side 0b00
-    out pins, 1         side 0b01  ; 16 bits left channel
+    ; Left channel - LRCLK=0
+    set x, 14           side 0b00   ; 15 iterations (0-14), LRCLK=0, BCLK=0
+left_loop:
+    out pins, 1         side 0b01   ; Output bit, BCLK=1
+    jmp x-- left_loop   side 0b00   ; BCLK=0, loop
+    out pins, 1         side 0b01   ; Last bit, BCLK=1
 
-    ; Right channel (LRCLK = 1)
-    set pins, 1         side 0b10  ; LRCLK=1, BCLK=0
-    out pins, 1         side 0b11  ; Output bit, LRCLK=1, BCLK=1
-    out pins, 1         side 0b10  ; Output bit, LRCLK=1, BCLK=0
-    out pins, 1         side 0b11
-    out pins, 1         side 0b10
-    out pins, 1         side 0b11
-    out pins, 1         side 0b10
-    out pins, 1         side 0b11
-    out pins, 1         side 0b10
-    out pins, 1         side 0b11
-    out pins, 1         side 0b10
-    out pins, 1         side 0b11
-    out pins, 1         side 0b10
-    out pins, 1         side 0b11
-    out pins, 1         side 0b10
-    out pins, 1         side 0b11
-    out pins, 1         side 0b10
-    out pins, 1         side 0b11  ; 16 bits right channel
+    ; Right channel - LRCLK=1
+    set x, 14           side 0b10   ; 15 iterations, LRCLK=1, BCLK=0
+right_loop:
+    out pins, 1         side 0b11   ; Output bit, BCLK=1
+    jmp x-- right_loop  side 0b10   ; BCLK=0, loop
+    out pins, 1         side 0b11   ; Last bit, BCLK=1
 .wrap
 
 
@@ -71,9 +46,6 @@ static inline void i2s_output_program_init(PIO pio, uint sm, uint offset,
 
     // Configure OUT pins (DATA)
     sm_config_set_out_pins(&c, data_pin, 1);
-
-    // Configure SET pins (LRCLK via set instruction - not used, we use sideset)
-    sm_config_set_set_pins(&c, lrclk_pin, 1);
 
     // Configure SIDESET pins (BCLK and LRCLK)
     // BCLK is sideset bit 0, LRCLK is sideset bit 1
