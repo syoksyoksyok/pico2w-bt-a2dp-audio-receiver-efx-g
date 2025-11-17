@@ -37,6 +37,9 @@ static uint8_t sdp_avdtp_sink_service_buffer[150];
 static uint16_t a2dp_cid = 0;
 static uint8_t local_seid = 1;
 
+// メディアパケット受信用
+static int media_sbc_codec_configuration[4];
+
 // ============================================================================
 // イベントハンドラー（前方宣言）
 // ============================================================================
@@ -44,6 +47,7 @@ static uint8_t local_seid = 1;
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, int sample_rate, void *context);
+static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16_t size);
 
 // ============================================================================
 // Bluetooth A2DP 初期化
@@ -71,6 +75,7 @@ bool bt_audio_init(void) {
     // A2DP Sink の初期化
     a2dp_sink_init();
     a2dp_sink_register_packet_handler(&a2dp_sink_packet_handler);
+    a2dp_sink_register_media_handler(&a2dp_sink_media_packet_handler);
 
     // SDP レコードを登録（A2DP Sink として認識されるように）
     memset(sdp_avdtp_sink_service_buffer, 0, sizeof(sdp_avdtp_sink_service_buffer));
@@ -103,6 +108,11 @@ bool bt_audio_init(void) {
     gap_discoverable_control(1);
     gap_set_class_of_device(BT_DEVICE_CLASS);
     gap_set_local_name(BT_DEVICE_NAME);
+
+    // HCI イベントハンドラーの登録
+    static btstack_packet_callback_registration_t hci_event_callback_registration;
+    hci_event_callback_registration.callback = &packet_handler;
+    hci_add_event_handler(&hci_event_callback_registration);
 
     // HCI パワーオン
     hci_power_control(HCI_POWER_ON);
@@ -287,5 +297,34 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
         default:
             break;
+    }
+}
+
+// ============================================================================
+// A2DP Sink メディアパケットハンドラー（SBC データの受信とデコード）
+// ============================================================================
+
+static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16_t size) {
+    UNUSED(seid);
+
+    // RTP ヘッダーをスキップ（12バイト）
+    int pos = 12;
+
+    // AVDTPメディアペイロードヘッダー（1バイト）をスキップ
+    pos++;
+
+    // SBCフレーム数を取得（1バイト）
+    if (pos >= size) return;
+    // uint8_t num_frames = packet[pos];
+    pos++;
+
+    // 各SBCフレームをデコード
+    while (pos < size) {
+        // 残りのデータをSBCデコーダーに渡す
+        btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
+
+        // 次のフレームへ（SBCデコーダーが自動的に処理済みバイト数を管理）
+        // 簡易実装：すべてのデータを処理したと仮定
+        break;
     }
 }
