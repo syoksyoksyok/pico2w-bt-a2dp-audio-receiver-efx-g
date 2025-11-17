@@ -265,7 +265,9 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
                     break;
 
                 case A2DP_SUBEVENT_SIGNALING_CONNECTION_RELEASED:
-                    printf("A2DP connection released\n");
+                    cid = a2dp_subevent_signaling_connection_released_get_a2dp_cid(packet);
+                    printf("A2DP connection released (CID: 0x%04x)\n", cid);
+                    fflush(stdout);
                     a2dp_cid = 0;
                     is_connected = false;
                     break;
@@ -276,24 +278,29 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
 
                     if (status != ERROR_CODE_SUCCESS) {
                         printf("Stream establishment failed, status 0x%02x\n", status);
+                        fflush(stdout);
                         is_connected = false;
                         break;
                     }
 
                     printf("Stream established: %s\n", bd_addr_to_str(address));
+                    fflush(stdout);
                     is_connected = true;
                     break;
 
                 case A2DP_SUBEVENT_STREAM_STARTED:
                     printf("Stream started - Audio playback begins\n");
+                    fflush(stdout);
                     break;
 
                 case A2DP_SUBEVENT_STREAM_SUSPENDED:
                     printf("Stream suspended - Audio playback paused\n");
+                    fflush(stdout);
                     break;
 
                 case A2DP_SUBEVENT_STREAM_RELEASED:
                     printf("Stream released\n");
+                    fflush(stdout);
                     is_connected = false;
                     break;
 
@@ -305,26 +312,36 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
                     printf("SBC configuration %s: channels %d, sample rate %lu Hz\n",
                            reconfigure ? "reconfigured" : "received",
                            num_channels, sampling_frequency);
+                    fflush(stdout);
 
                     current_sample_rate = sampling_frequency;
                     break;
                 }
 
                 default:
+                    printf("[A2DP] Unknown subevent: 0x%02x\n", subevent_code);
+                    fflush(stdout);
                     break;
             }
             break;
         }
 
-        case HCI_EVENT_AVDTP_META:
-            switch (packet[2]) {
+        case HCI_EVENT_AVDTP_META: {
+            uint8_t avdtp_subevent = packet[2];
+            printf("[AVDTP] Subevent: 0x%02x\n", avdtp_subevent);
+            fflush(stdout);
+
+            switch (avdtp_subevent) {
                 case AVDTP_SUBEVENT_STREAMING_CAN_SEND_MEDIA_PACKET_NOW:
                     // Sink なので特に処理なし
                     break;
                 default:
+                    printf("[AVDTP] Unknown subevent: 0x%02x\n", avdtp_subevent);
+                    fflush(stdout);
                     break;
             }
             break;
+        }
 
         default:
             break;
@@ -372,7 +389,17 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
             uint8_t status = packet[2];
             if (status != 0) {
                 printf("[BT] Command status error: 0x%02x\n", status);
+                fflush(stdout);
             }
+            break;
+        }
+
+        case HCI_EVENT_DISCONNECTION_COMPLETE: {
+            // 接続切断イベント
+            uint16_t handle = little_endian_read_16(packet, 3);
+            uint8_t reason = packet[5];
+            printf("[BT] Disconnection complete: handle=0x%04x, reason=0x%02x\n", handle, reason);
+            fflush(stdout);
             break;
         }
 
