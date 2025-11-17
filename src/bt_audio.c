@@ -243,8 +243,12 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
     if (packet_type != HCI_EVENT_PACKET) return;
 
     switch (hci_event_packet_get_type(packet)) {
-        case HCI_EVENT_A2DP_META:
-            switch (hci_event_a2dp_meta_get_subevent_code(packet)) {
+        case HCI_EVENT_A2DP_META: {
+            uint8_t subevent_code = hci_event_a2dp_meta_get_subevent_code(packet);
+            printf("[A2DP] Subevent: 0x%02x\n", subevent_code);
+            fflush(stdout);
+
+            switch (subevent_code) {
                 case A2DP_SUBEVENT_SIGNALING_CONNECTION_ESTABLISHED:
                     a2dp_subevent_signaling_connection_established_get_bd_addr(packet, address);
                     cid = a2dp_subevent_signaling_connection_established_get_a2dp_cid(packet);
@@ -310,6 +314,7 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
                     break;
             }
             break;
+        }
 
         case HCI_EVENT_AVDTP_META:
             switch (packet[2]) {
