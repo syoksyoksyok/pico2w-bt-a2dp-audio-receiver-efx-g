@@ -124,22 +124,41 @@ bool bt_audio_init(void) {
 
     // GAP（Generic Access Profile）の設定
     printf("[BT] Configuring GAP...\n");
-    gap_discoverable_control(1);
+    fflush(stdout);
+
+    // デバイス情報の設定
     gap_set_class_of_device(BT_DEVICE_CLASS);
     gap_set_local_name(BT_DEVICE_NAME);
+    printf("[BT] Device name set to: %s\n", BT_DEVICE_NAME);
+    printf("[BT] Device class set to: 0x%06x\n", BT_DEVICE_CLASS);
+    fflush(stdout);
 
-    // SSP（Secure Simple Pairing）を有効化（iOS/Android対応に必要）
+    // SSP（Secure Simple Pairing）を有効化（iOS/Android対応に必須）
     printf("[BT] Enabling SSP (Secure Simple Pairing)...\n");
+    fflush(stdout);
     gap_ssp_set_io_capability(SSP_IO_CAPABILITY_NO_INPUT_NO_OUTPUT);
     gap_ssp_set_authentication_requirement(SSP_IO_AUTHREQ_MITM_PROTECTION_NOT_REQUIRED_GENERAL_BONDING);
+    printf("[BT] SSP enabled with NO_INPUT_NO_OUTPUT capability\n");
+    fflush(stdout);
 
-    // Bluetooth Classic のスキャンモード設定（重要！）
-    // これがないとデバイスが検出されない・接続できない
-    printf("[BT] Enabling inquiry and page scan...\n");
+    // Bluetooth Classic のスキャンモード設定（接続受付に必須）
+    printf("[BT] Enabling discoverable and connectable mode...\n");
+    fflush(stdout);
+    gap_discoverable_control(1);   // 検出可能にする
+    gap_connectable_control(1);    // 接続可能にする（これが重要！）
+    printf("[BT] Device is now discoverable and connectable\n");
+    fflush(stdout);
+
+    // リンクポリシーの設定
+    printf("[BT] Configuring link policy...\n");
+    fflush(stdout);
     gap_set_default_link_policy_settings(LM_LINK_POLICY_ENABLE_ROLE_SWITCH | LM_LINK_POLICY_ENABLE_SNIFF_MODE);
     gap_set_allow_role_switch(true);
+    printf("[BT] Link policy configured\n");
+    fflush(stdout);
 
-    printf("[BT] GAP configured (Device name: %s)\n", BT_DEVICE_NAME);
+    printf("[BT] GAP configuration complete\n");
+    fflush(stdout);
 
     // HCI パワーオン
     printf("[BT] Powering on HCI...\n");
