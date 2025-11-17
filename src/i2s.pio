@@ -1,0 +1,95 @@
+;
+; I2S Audio Output using PIO
+; Outputs stereo 16-bit audio data to an I2S DAC (e.g., PCM5102)
+;
+; Pin assignments:
+;   - DATA_PIN:   I2S data output (DIN on PCM5102)
+;   - BCLK_PIN:   Bit clock output (BCK on PCM5102)
+;   - LRCLK_PIN:  Left/Right clock output (LCK/LRCLK on PCM5102)
+;
+; Format: Philips I2S (standard I2S)
+;   - LRCLK: 0 = Left channel, 1 = Right channel
+;   - Data is output MSB first
+;   - Data transitions on falling edge of BCLK
+;   - 32 BCLK cycles per channel (16 bits data + padding)
+;
+
+.program i2s_output
+.side_set 2 opt                    ; side_set for BCLK and LRCLK
+
+.wrap_target
+    ; Left channel (LRCLK = 0)
+    set pins, 0         side 0b00  ; LRCLK=0, BCLK=0
+    out pins, 1         side 0b01  ; Output bit, LRCLK=0, BCLK=1
+    out pins, 1         side 0b00  ; Output bit, LRCLK=0, BCLK=0
+    out pins, 1         side 0b01
+    out pins, 1         side 0b00
+    out pins, 1         side 0b01
+    out pins, 1         side 0b00
+    out pins, 1         side 0b01
+    out pins, 1         side 0b00
+    out pins, 1         side 0b01
+    out pins, 1         side 0b00
+    out pins, 1         side 0b01
+    out pins, 1         side 0b00
+    out pins, 1         side 0b01
+    out pins, 1         side 0b00
+    out pins, 1         side 0b01
+    out pins, 1         side 0b00
+    out pins, 1         side 0b01  ; 16 bits left channel
+
+    ; Right channel (LRCLK = 1)
+    set pins, 1         side 0b10  ; LRCLK=1, BCLK=0
+    out pins, 1         side 0b11  ; Output bit, LRCLK=1, BCLK=1
+    out pins, 1         side 0b10  ; Output bit, LRCLK=1, BCLK=0
+    out pins, 1         side 0b11
+    out pins, 1         side 0b10
+    out pins, 1         side 0b11
+    out pins, 1         side 0b10
+    out pins, 1         side 0b11
+    out pins, 1         side 0b10
+    out pins, 1         side 0b11
+    out pins, 1         side 0b10
+    out pins, 1         side 0b11
+    out pins, 1         side 0b10
+    out pins, 1         side 0b11
+    out pins, 1         side 0b10
+    out pins, 1         side 0b11
+    out pins, 1         side 0b10
+    out pins, 1         side 0b11  ; 16 bits right channel
+.wrap
+
+
+% c-sdk {
+static inline void i2s_output_program_init(PIO pio, uint sm, uint offset,
+                                           uint data_pin, uint bclk_pin, uint lrclk_pin) {
+    pio_sm_config c = i2s_output_program_get_default_config(offset);
+
+    // Set DATA pin as output
+    pio_gpio_init(pio, data_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, data_pin, 1, true);
+
+    // Configure OUT pins (DATA)
+    sm_config_set_out_pins(&c, data_pin, 1);
+
+    // Configure SET pins (LRCLK via set instruction - not used, we use sideset)
+    sm_config_set_set_pins(&c, lrclk_pin, 1);
+
+    // Configure SIDESET pins (BCLK and LRCLK)
+    // BCLK is sideset bit 0, LRCLK is sideset bit 1
+    sm_config_set_sideset_pins(&c, bclk_pin);
+    pio_gpio_init(pio, bclk_pin);
+    pio_gpio_init(pio, lrclk_pin);
+    pio_sm_set_consecutive_pindirs(pio, sm, bclk_pin, 2, true);
+
+    // OSR shifts left (MSB first)
+    sm_config_set_out_shift(&c, false, true, 32);
+
+    // FIFO join - combine TX and RX FIFOs for deeper TX buffer
+    sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
+
+    // Load configuration and start
+    pio_sm_init(pio, sm, offset, &c);
+    pio_sm_set_enabled(pio, sm, true);
+}
+%}

@@ -21,10 +21,9 @@
 // ============================================================================
 
 // 出力モードを選択（どちらか一方をコメントアウト）
-// NOTE: I2S implementation is not available in current SDK version
-// Use PWM output instead
-// #define USE_I2S_OUTPUT     1   // I2S DAC 出力を使用（未実装）
-#define USE_PWM_OUTPUT     1   // PWM 簡易 DAC 出力を使用
+// I2S implementation now available using PIO
+#define USE_I2S_OUTPUT     1   // I2S DAC 出力を使用（PIO実装）
+// #define USE_PWM_OUTPUT     1   // PWM 簡易 DAC 出力を使用
 
 // ============================================================================
 // I2S DAC 設定（PCM5102A などの I2S DAC を使用する場合）
