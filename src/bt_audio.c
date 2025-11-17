@@ -56,22 +56,15 @@ bool bt_audio_init(void) {
     printf("Initializing Bluetooth...\n");
 
     // CYW43 初期化（Pico W の Wi-Fi/Bluetooth チップ）
+    // これにより BTstack run loop と HCI transport も自動的に初期化される
     if (cyw43_arch_init()) {
         printf("ERROR: Failed to initialize CYW43\n");
         return false;
     }
-    printf("CYW43 initialized\n");
-
-    // BTstack run loop の初期化
-    printf("Initializing BTstack run loop...\n");
-    btstack_run_loop_init(btstack_run_loop_embedded_get_instance());
-
-    // HCI の初期化（CYW43 transport を使用）
-    printf("Initializing HCI transport...\n");
-    hci_init(hci_transport_cyw43_instance(), NULL);
+    printf("CYW43 initialized (BTstack automatically configured)\n");
 
     // HCI イベントハンドラの登録
-    static hci_event_callback_registration_t hci_event_callback_registration;
+    static btstack_packet_callback_registration_t hci_event_callback_registration;
     hci_event_callback_registration.callback = &packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
     printf("HCI event handler registered\n");
@@ -135,8 +128,10 @@ bool bt_audio_init(void) {
 
 void bt_audio_run(void) {
     // BTstack のメインループを実行
-    // この関数は定期的に呼び出す必要がある
-    btstack_run_loop_execute_once();
+    // Pico SDK の cyw43_arch_poll() を使用して BTstack イベントを処理
+    // cyw43_arch_init() が async_context でバックグラウンド処理を設定しているため、
+    // この関数は主に CYW43 ドライバのポーリングに使用される
+    cyw43_arch_poll();
 }
 
 // ============================================================================
