@@ -44,6 +44,7 @@ static uint8_t local_seid = 1;
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size);
 static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, int sample_rate, void *context);
+static void handle_l2cap_media_data_packet(uint8_t seid, uint8_t *packet, uint16_t size);
 
 // ============================================================================
 // Bluetooth A2DP 初期化
@@ -71,6 +72,7 @@ bool bt_audio_init(void) {
     // A2DP Sink の初期化
     a2dp_sink_init();
     a2dp_sink_register_packet_handler(&a2dp_sink_packet_handler);
+    a2dp_sink_register_media_handler(&handle_l2cap_media_data_packet);
 
     // SDP レコードを登録（A2DP Sink として認識されるように）
     memset(sdp_avdtp_sink_service_buffer, 0, sizeof(sdp_avdtp_sink_service_buffer));
@@ -262,6 +264,65 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
 
         default:
             break;
+    }
+}
+
+// ============================================================================
+// L2CAP メディアデータパケットハンドラー
+// ============================================================================
+
+static void handle_l2cap_media_data_packet(uint8_t seid, uint8_t *packet, uint16_t size) {
+    UNUSED(seid);
+
+    // パケットサイズチェック
+    if (size < 13) {
+        // 最小ヘッダーサイズ未満の場合は無視
+        return;
+    }
+
+    int pos = 0;
+
+    // メディアパケットヘッダーの読み取り (12 bytes)
+    // RTP ヘッダー構造:
+    // - V(2), P(1), X(1), CC(4) [1 byte]
+    // - M(1), PT(7) [1 byte]
+    // - Sequence Number [2 bytes]
+    // - Timestamp [4 bytes]
+    // - SSRC [4 bytes]
+
+    // RTP ヘッダーをスキップ (12 bytes)
+    pos += 12;
+
+    // SBC メディアペイロードヘッダーの読み取り (1 byte)
+    // - フラグメンテーション情報とフレーム数
+    if (pos >= size) {
+        return;
+    }
+
+    uint8_t sbc_media_header = packet[pos];
+    pos += 1;
+
+    // フラグメンテーションチェック
+    // ビット7: フラグメンテーション (0 = 完全なフレーム, 1 = フラグメント)
+    // ビット6-4: 開始/継続/終了フラグ
+    // ビット3-0: フレーム数
+    uint8_t fragmentation = (sbc_media_header >> 7) & 0x01;
+    uint8_t num_frames = sbc_media_header & 0x0F;
+
+    if (fragmentation) {
+        // フラグメント化されたパケットは現在未対応
+        // 必要に応じて実装
+        return;
+    }
+
+    // SBC フレームデータを SBC デコーダーに渡す
+    int remaining_size = size - pos;
+    if (remaining_size > 0) {
+        uint8_t *sbc_frame_data = packet + pos;
+
+        // SBC デコーダーにデータを供給
+        // デコーダーは自動的に handle_pcm_data コールバックを呼び出す
+        btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, sbc_frame_data, remaining_size);
     }
 }
 
