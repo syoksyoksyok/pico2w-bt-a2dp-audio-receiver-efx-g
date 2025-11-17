@@ -37,8 +37,8 @@ static uint8_t sdp_avdtp_sink_service_buffer[150];
 static uint16_t a2dp_cid = 0;
 static uint8_t local_seid = 1;
 
-// HCI イベントコールバック登録
-static hci_event_callback_registration_t hci_event_callback_registration;
+// HCI イベントコールバック登録（正しい型名を使用）
+static btstack_packet_callback_registration_t hci_event_callback_registration;
 
 // ============================================================================
 // イベントハンドラー（前方宣言）
@@ -59,22 +59,13 @@ bool bt_audio_init(void) {
     printf("[BT] Initializing Bluetooth...\n");
 
     // CYW43 初期化（Pico W の Wi-Fi/Bluetooth チップ）
-    printf("[BT] Initializing CYW43...\n");
+    // これによりBTstackも自動的に初期化される
+    printf("[BT] Initializing CYW43 (includes BTstack initialization)...\n");
     if (cyw43_arch_init()) {
         printf("ERROR: Failed to initialize CYW43\n");
         return false;
     }
     printf("[BT] CYW43 initialized\n");
-
-    // BTstack run loop の初期化
-    printf("[BT] Initializing BTstack run loop...\n");
-    btstack_run_loop_init(btstack_run_loop_embedded_get_instance());
-    printf("[BT] BTstack run loop initialized\n");
-
-    // HCI の初期化
-    printf("[BT] Initializing HCI...\n");
-    hci_init(hci_transport_cyw43_instance(), NULL);
-    printf("[BT] HCI initialized\n");
 
     // HCI packet handler を登録
     printf("[BT] Registering HCI event handler...\n");
@@ -82,6 +73,7 @@ bool bt_audio_init(void) {
     hci_add_event_handler(&hci_event_callback_registration);
     printf("[BT] HCI event handler registered\n");
 
+    // L2CAP 初期化
     printf("[BT] Initializing L2CAP...\n");
     l2cap_init();
     printf("[BT] L2CAP initialized\n");
@@ -157,8 +149,9 @@ bool bt_audio_init(void) {
 
 void bt_audio_run(void) {
     // BTstack のメインループを実行
-    // この関数は定期的に呼び出す必要がある
-    btstack_run_loop_execute_once();
+    // pico_cyw43_arch_none を使用している場合、明示的なポーリングが必要
+    // cyw43_arch_poll() がBTstackイベントも処理する
+    cyw43_arch_poll();
 }
 
 // ============================================================================
