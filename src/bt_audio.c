@@ -37,6 +37,9 @@ static uint8_t sdp_avdtp_sink_service_buffer[150];
 static uint16_t a2dp_cid = 0;
 static uint8_t local_seid = 1;
 
+// HCI イベントコールバック登録
+static hci_event_callback_registration_t hci_event_callback_registration;
+
 // ============================================================================
 // イベントハンドラー（前方宣言）
 // ============================================================================
@@ -62,7 +65,16 @@ bool bt_audio_init(void) {
     }
     printf("CYW43 initialized\n");
 
+    // BTstack run loop の初期化
+    btstack_run_loop_init(btstack_run_loop_embedded_get_instance());
+
     // HCI の初期化
+    hci_init(hci_transport_cyw43_instance(), NULL);
+
+    // HCI packet handler を登録
+    hci_event_callback_registration.callback = &packet_handler;
+    hci_add_event_handler(&hci_event_callback_registration);
+
     l2cap_init();
 
     // SDP サーバーの初期化
@@ -122,6 +134,7 @@ bool bt_audio_init(void) {
 void bt_audio_run(void) {
     // BTstack のメインループを実行
     // この関数は定期的に呼び出す必要がある
+    btstack_run_loop_execute_once();
 }
 
 // ============================================================================
