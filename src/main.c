@@ -35,9 +35,23 @@ static absolute_time_t last_status_log_time;
 
 static void pcm_data_handler(const int16_t *pcm_data, uint32_t num_samples,
                               uint8_t channels, uint32_t sample_rate) {
+    static bool first_write = true;
+    static uint32_t write_count = 0;
+    write_count++;
+
+    if (first_write) {
+        printf("First audio write: %lu samples, %d ch, %lu Hz\n", num_samples, channels, sample_rate);
+        first_write = false;
+    }
+
 #ifdef USE_I2S_OUTPUT
     // I2S 出力モードの場合
     uint32_t written = audio_out_i2s_write(pcm_data, num_samples);
+
+    // 100回ごとにログ出力
+    if (write_count % 100 == 0) {
+        printf("I2S writes: %lu (wrote %lu/%lu samples)\n", write_count, written, num_samples);
+    }
 
     if (written < num_samples) {
 #ifdef ENABLE_DEBUG_LOG

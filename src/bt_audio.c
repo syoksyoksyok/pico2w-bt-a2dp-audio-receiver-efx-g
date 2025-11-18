@@ -181,10 +181,18 @@ static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, in
 
     // 初回のPCMデータ受信をログ出力
     static bool first_pcm = true;
+    static uint32_t pcm_count = 0;
+    pcm_count++;
+
     if (first_pcm) {
         printf("First PCM data received: %d samples, %d channels, %d Hz\n",
                num_samples, num_channels, sample_rate);
         first_pcm = false;
+    }
+
+    // 100回ごとにログ出力
+    if (pcm_count % 100 == 0) {
+        printf("PCM callbacks: %lu (samples=%d, ch=%d)\n", pcm_count, num_samples, num_channels);
     }
 
     // サンプリングレートを更新
@@ -196,6 +204,8 @@ static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, in
     // コールバックが設定されていればPCMデータを渡す
     if (pcm_callback) {
         pcm_callback(data, (uint32_t)num_samples, (uint8_t)num_channels, (uint32_t)sample_rate);
+    } else {
+        printf("WARNING: pcm_callback is NULL!\n");
     }
 }
 
@@ -347,11 +357,19 @@ static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16
     uint8_t num_frames = packet[pos];
     pos++;
 
-    // デバッグ出力（初回のみ）
+    // デバッグ出力（初回と定期的に）
     static bool first_packet = true;
+    static uint32_t packet_count = 0;
+    packet_count++;
+
     if (first_packet) {
         printf("First media packet received: %d SBC frames, %d bytes\n", num_frames, size);
         first_packet = false;
+    }
+
+    // 100パケットごとにログ出力
+    if (packet_count % 100 == 0) {
+        printf("Media packets received: %lu\n", packet_count);
     }
 
     // SBCデータ全体をデコーダーに渡す

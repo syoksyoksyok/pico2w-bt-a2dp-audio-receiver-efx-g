@@ -178,8 +178,13 @@ void audio_out_i2s_start(void) {
     fill_dma_buffer(dma_buffer[0], I2S_DMA_BUFFER_SIZE);
     current_dma_buffer = 0;
 
+    // PIO State Machine を有効化
+    pio_sm_set_enabled(pio, sm, true);
+    printf("  PIO SM enabled\n");
+
     // DMA を開始
     dma_channel_start(dma_channel);
+    printf("  DMA started\n");
 
     is_running = true;
     printf("I2S audio output started\n");
