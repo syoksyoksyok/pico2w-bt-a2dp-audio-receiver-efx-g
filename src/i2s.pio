@@ -80,8 +80,9 @@ static inline void i2s_output_program_init(PIO pio, uint sm, uint offset, uint d
     float clk_div = (float)clock_get_hz(clk_sys) / (sample_rate * 64.0f * 2.0f);
     sm_config_set_clkdiv(&c, clk_div);
 
-    // State Machineの初期化と開始
+    // State Machineの初期化（開始はaudio_out_i2s_start()で行う）
     pio_sm_init(pio, sm, offset, &c);
-    pio_sm_set_enabled(pio, sm, true);
+    // Note: pio_sm_set_enabled() はここでは呼ばない
+    // DMAの準備ができてから audio_out_i2s_start() で有効化する
 }
 %}

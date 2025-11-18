@@ -182,6 +182,7 @@ static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, in
     // 初回のPCMデータ受信をログ出力
     static bool first_pcm = true;
     static uint32_t pcm_count = 0;
+    static uint32_t last_logged_count = 0;
     pcm_count++;
 
     if (first_pcm) {
@@ -190,15 +191,22 @@ static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, in
         first_pcm = false;
     }
 
-    // 100回ごとにログ出力
-    if (pcm_count % 100 == 0) {
+    // 100回ごと、または1000回以上ログが出ていない場合に出力
+    if (pcm_count % 100 == 0 || (pcm_count - last_logged_count) >= 1000) {
         printf("PCM callbacks: %lu (samples=%d, ch=%d)\n", pcm_count, num_samples, num_channels);
+        last_logged_count = pcm_count;
     }
 
     // サンプリングレートを更新
     if (current_sample_rate != (uint32_t)sample_rate) {
         current_sample_rate = (uint32_t)sample_rate;
         printf("Sample rate changed: %lu Hz\n", current_sample_rate);
+    }
+
+    // データの健全性チェック（最初の数回のみ）
+    if (pcm_count <= 3 && data != NULL) {
+        // 最初のサンプル値を表示（デバッグ用）
+        printf(">>> PCM sample[0]=%d, sample[1]=%d\n", data[0], data[1]);
     }
 
     // コールバックが設定されていればPCMデータを渡す
@@ -369,10 +377,19 @@ static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16
 
     // 100パケットごとにログ出力
     if (packet_count % 100 == 0) {
-        printf("Media packets received: %lu\n", packet_count);
+        printf("Media packets received: %lu (frames=%d, size=%d)\n", packet_count, num_frames, size);
+    }
+
+    // 最初の数パケットは詳細ログ
+    if (packet_count <= 5) {
+        printf(">>> Calling SBC decoder: frames=%d, data_size=%d\n", num_frames, size - pos);
     }
 
     // SBCデータ全体をデコーダーに渡す
     // BTstackのSBCデコーダーは内部で全フレームを処理し、PCMコールバックを呼び出す
     btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
+
+    if (packet_count <= 5) {
+        printf(">>> SBC decoder returned\n");
+    }
 }
