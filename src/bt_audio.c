@@ -392,18 +392,19 @@ static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16
 
     // AVDTPメディアペイロードヘッダー（1バイト）をスキップ
     pos++;
-
-    // SBCフレーム数を取得（1バイト）
-    if (pos >= size) return;
-    uint8_t num_frames = packet[pos];
-    pos++;
+    // pos = 13: ここからSBCデータ開始（0x9C sync wordから）
 
     // 100パケットごとにログ出力
     if (packet_count % 100 == 0) {
-        printf("Media packets received: %lu (frames=%d, size=%d)\n", packet_count, num_frames, size);
+        printf("Media packets received: %lu (size=%d, sbc_size=%d)\n", packet_count, size, size - pos);
     }
 
-    // SBCデータ全体をデコーダーに渡す
+    // デバッグ: 最初のパケットでSBCデータの開始を確認
+    if (packet_count <= 3) {
+        printf(">>> SBC data starts at offset %d: 0x%02X (should be 0x9C)\n", pos, packet[pos]);
+    }
+
+    // SBCデータ全体をデコーダーに渡す（offset 13 から）
     // BTstackのSBCデコーダーは内部で全フレームを処理し、PCMコールバックを呼び出す
     btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
 
