@@ -317,6 +317,11 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
                     printf("  Channels: %d\n", num_channels);
                     printf("  Sample rate: %lu Hz\n", sampling_frequency);
 
+                    // ネゴシエートされた設定を表示（重要！）
+                    printf("  Negotiated config buffer: %02X %02X %02X %02X\n",
+                           sbc_codec_configuration[0], sbc_codec_configuration[1],
+                           sbc_codec_configuration[2], sbc_codec_configuration[3]);
+
                     current_sample_rate = sampling_frequency;
 
                     // SBCデコーダーを再初期化（ストリーム設定で）
