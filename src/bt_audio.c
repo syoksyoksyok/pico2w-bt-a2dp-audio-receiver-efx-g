@@ -52,12 +52,6 @@ static uint8_t sbc_codec_capabilities[] = {
     53    // Byte 3: 最大ビットプール値
 };
 
-// SBC Codec Configuration (実際に使用される設定)
-static uint8_t sbc_codec_configuration[4];
-
-// メディアパケット受信用
-static int media_sbc_codec_configuration[4];
-
 // ============================================================================
 // イベントハンドラー（前方宣言）
 // ============================================================================
@@ -275,16 +269,10 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
                     uint8_t num_channels = a2dp_subevent_signaling_media_codec_sbc_configuration_get_num_channels(packet);
                     uint32_t sampling_frequency = a2dp_subevent_signaling_media_codec_sbc_configuration_get_sampling_frequency(packet);
 
-                    // SBC設定を保存
-                    a2dp_subevent_signaling_media_codec_sbc_configuration_get_configuration(packet, sbc_codec_configuration);
-
                     printf("SBC configuration %s:\n",
                            reconfigure ? "reconfigured" : "received");
                     printf("  Channels: %d\n", num_channels);
                     printf("  Sample rate: %lu Hz\n", sampling_frequency);
-                    printf("  Configuration: 0x%02X 0x%02X 0x%02X 0x%02X\n",
-                           sbc_codec_configuration[0], sbc_codec_configuration[1],
-                           sbc_codec_configuration[2], sbc_codec_configuration[3]);
 
                     current_sample_rate = sampling_frequency;
                     break;
@@ -366,14 +354,7 @@ static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16
         first_packet = false;
     }
 
-    // 各SBCフレームをデコード
-    // BTstackのSBCデコーダーは、process_data内で必要なバイト数を自動的に消費する
-    while (pos < size) {
-        int bytes_processed = btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
-        if (bytes_processed <= 0) {
-            // デコードエラーまたは完了
-            break;
-        }
-        pos += bytes_processed;
-    }
+    // SBCデータ全体をデコーダーに渡す
+    // BTstackのSBCデコーダーは内部で全フレームを処理し、PCMコールバックを呼び出す
+    btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
 }
