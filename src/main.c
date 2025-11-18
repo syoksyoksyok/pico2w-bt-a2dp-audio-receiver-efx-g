@@ -40,7 +40,8 @@ static void pcm_data_handler(const int16_t *pcm_data, uint32_t num_samples,
     write_count++;
 
     if (first_write) {
-        printf("First audio write: %lu samples, %d ch, %lu Hz\n", num_samples, channels, sample_rate);
+        printf(">>> pcm_data_handler called! samples=%lu, ch=%d, rate=%lu\n", num_samples, channels, sample_rate);
+        printf(">>> pcm_data address: %p\n", (void*)pcm_data);
         first_write = false;
     }
 
@@ -48,15 +49,21 @@ static void pcm_data_handler(const int16_t *pcm_data, uint32_t num_samples,
     // I2S 出力モードの場合
     uint32_t written = audio_out_i2s_write(pcm_data, num_samples);
 
+    // 最初の数回は詳細ログ
+    if (write_count <= 5) {
+        printf(">>> I2S write #%lu: requested=%lu, written=%lu\n", write_count, num_samples, written);
+        uint32_t buffered = audio_out_i2s_get_buffered_samples();
+        printf(">>> Buffer now has: %lu samples\n", buffered);
+    }
+
     // 100回ごとにログ出力
     if (write_count % 100 == 0) {
-        printf("I2S writes: %lu (wrote %lu/%lu samples)\n", write_count, written, num_samples);
+        uint32_t buffered = audio_out_i2s_get_buffered_samples();
+        printf("I2S writes: %lu (wrote %lu/%lu, buffered=%lu)\n", write_count, written, num_samples, buffered);
     }
 
     if (written < num_samples) {
-#ifdef ENABLE_DEBUG_LOG
-        printf("WARNING: Audio buffer full, dropped %lu samples\n", num_samples - written);
-#endif
+        printf("WARNING: Dropped %lu samples (requested %lu, wrote %lu)\n", num_samples - written, num_samples, written);
     }
 
 #elif defined(USE_PWM_OUTPUT)
