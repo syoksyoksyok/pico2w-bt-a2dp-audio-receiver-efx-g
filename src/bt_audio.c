@@ -52,6 +52,9 @@ static uint8_t sbc_codec_capabilities[] = {
     53    // Byte 3: 最大ビットプール値
 };
 
+// SBC Codec Configuration (実際に使用される設定を保存)
+static uint8_t sbc_codec_configuration[4];
+
 // ============================================================================
 // イベントハンドラー（前方宣言）
 // ============================================================================
@@ -104,8 +107,8 @@ bool bt_audio_init(void) {
         AVDTP_CODEC_SBC,
         sbc_codec_capabilities,
         sizeof(sbc_codec_capabilities),
-        sdp_avdtp_sink_service_buffer,
-        sizeof(sdp_avdtp_sink_service_buffer));
+        sbc_codec_configuration,  // 実際の設定を保存するバッファ
+        sizeof(sbc_codec_configuration));
 
     if (!local_stream_endpoint) {
         printf("ERROR: Failed to create A2DP stream endpoint\n");
