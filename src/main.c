@@ -11,7 +11,6 @@
 
 #include "pico/stdlib.h"
 #include "pico/cyw43_arch.h"
-#include "hardware/clocks.h"
 
 #include "config.h"
 #include "bt_audio.h"
@@ -94,11 +93,6 @@ static void log_buffer_status(void) {
 // ============================================================================
 
 int main(void) {
-    // システムクロックを最適化（I2S用に正確な整数分周を実現）
-    // 44.1kHz × 66サイクル = 2,910,600 Hz が必要
-    // 151.35 MHz / 52 = 2,910,600 Hz （完全な整数分周！）
-    set_sys_clock_khz(151351, true);
-
     // 標準入出力の初期化
     stdio_init_all();
 
@@ -113,8 +107,6 @@ int main(void) {
 
     // 設定情報を表示
     printf("Configuration:\n");
-    printf("  System clock: %lu Hz (%.2f MHz) - optimized for I2S\n",
-           clock_get_hz(clk_sys), clock_get_hz(clk_sys) / 1000000.0f);
     printf("  Device name: %s\n", BT_DEVICE_NAME);
     printf("  Output mode: I2S DAC\n");
     printf("  I2S pins: DATA=%d, BCLK=%d, LRCLK=%d\n",
