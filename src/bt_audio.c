@@ -329,12 +329,21 @@ static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16
     UNUSED(seid);
 
     static uint32_t media_packet_count = 0;
+    static uint32_t media_total_bytes = 0;
+
     media_packet_count++;
+    media_total_bytes += (size > 13) ? (size - 13) : 0;
 
     // 最初の数回だけログ出力（デバッグ用）
     if (media_packet_count <= 3) {
         printf("[MEDIA] Packet #%lu: size=%u, offset=13, data_size=%u\n",
                media_packet_count, size, size - 13);
+    }
+
+    // 100パケットごとに統計を表示
+    if (media_packet_count % 100 == 0) {
+        printf("[MEDIA Stats] Packets: %lu, Total bytes: %lu, Avg size: %lu\n",
+               media_packet_count, media_total_bytes, media_total_bytes / media_packet_count);
     }
 
     if (size < 13) {
