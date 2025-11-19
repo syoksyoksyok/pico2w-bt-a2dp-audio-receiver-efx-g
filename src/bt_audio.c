@@ -120,10 +120,9 @@ bool bt_audio_init(void) {
 // ============================================================================
 
 void bt_audio_run(void) {
-    // CYW43 (Wi-Fi/Bluetooth chip) のポーリング処理
-    cyw43_arch_poll();
-
     // BTstack のメインループを実行（重要！これがないと音声パケットが処理されない）
+    // pico_cyw43_arch_none モードでは cyw43_arch_poll() は不要
+    // （CYW43のBluetooth管理はBTstack内部で行われる）
     btstack_run_loop_poll();
 }
 
