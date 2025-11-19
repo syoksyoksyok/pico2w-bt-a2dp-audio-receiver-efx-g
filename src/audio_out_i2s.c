@@ -41,9 +41,10 @@ static volatile uint32_t read_pos = 0;
 static volatile uint32_t buffered_samples = 0;  // ステレオペア数
 
 // DMA バッファ（2つのバッファでピンポン方式）
-// 注意: 大きすぎるとDMA割り込みが重くなり、CYW43のBluetooth処理を妨害して切断される
-// 128サンプル = 約2.9ms@44.1kHz（安全な範囲）
-#define I2S_DMA_BUFFER_SIZE 128
+// バッファサイズを512サンプル（約11.6ms@44.1kHz）に増加
+// これにより、DMA IRQ頻度が大幅に減少し、ジッター/ノイズが低減される
+// DMA IRQ優先度を0xFF（最低）に設定済みなので、Bluetooth処理を妨害しない
+#define I2S_DMA_BUFFER_SIZE 512
 static int32_t dma_buffer[2][I2S_DMA_BUFFER_SIZE];  // 32ビット（左右16ビットずつ）
 static volatile uint8_t current_dma_buffer = 0;
 
@@ -81,10 +82,12 @@ bool audio_out_i2s_init(uint32_t sample_rate, uint8_t bits, uint8_t channels) {
     offset = pio_add_program(pio, &i2s_output_program);
     printf("  PIO program loaded at offset %d\n", offset);
 
-    // BCLK周波数の計算と表示
-    uint32_t bclk_freq = sample_rate * 64;  // 16ビット × 2チャンネル × 2
-    float clk_div = (float)clock_get_hz(clk_sys) / (bclk_freq * 2.0f);
-    printf("  BCLK frequency: %lu Hz (divider: %.2f)\n", bclk_freq, clk_div);
+    // PIOクロック設定の計算と表示
+    uint32_t pio_clk_freq = sample_rate * 66;  // 66サイクル/ステレオペア
+    uint32_t sys_clk = clock_get_hz(clk_sys);
+    float clk_div = (float)sys_clk / (float)pio_clk_freq;
+    printf("  PIO clock: %lu Hz (divider: %.2f)\n", pio_clk_freq, clk_div);
+    printf("  BCLK frequency: %lu Hz (64 × sample rate)\n", sample_rate * 64);
 
     // PIO State Machineを初期化
     i2s_output_program_init(pio, sm, offset, I2S_DATA_PIN, I2S_BCLK_PIN, sample_rate);
@@ -115,12 +118,13 @@ bool audio_out_i2s_init(uint32_t sample_rate, uint8_t bits, uint8_t channels) {
     dma_channel_set_irq0_enabled(dma_channel, true);
     irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
 
-    // DMA割り込み優先度を最低に設定（CYW43のBluetooth処理を妨害しないため）
-    // 0x00=最高優先度、0xC0=最低優先度
-    irq_set_priority(DMA_IRQ_0, 0xC0);
+    // DMA割り込み優先度を絶対最低に設定（CYW43のBluetooth処理を妨害しないため）
+    // 0x00=最高優先度、0xFF=絶対最低優先度
+    // Cortex-M33では実際には2ビット優先度（0-3）で、0xFFは最低の3にマップされる
+    irq_set_priority(DMA_IRQ_0, DMA_IRQ_PRIORITY);
 
     irq_set_enabled(DMA_IRQ_0, true);
-    printf("  DMA IRQ priority set to lowest (0xC0)\n");
+    printf("  DMA IRQ priority set to absolute lowest (0x%02X)\n", DMA_IRQ_PRIORITY);
 
     // バッファをクリア
     audio_out_i2s_clear_buffer();
@@ -134,6 +138,12 @@ bool audio_out_i2s_init(uint32_t sample_rate, uint8_t bits, uint8_t channels) {
 
 uint32_t audio_out_i2s_write(const int16_t *pcm_data, uint32_t num_samples) {
     uint32_t samples_written = 0;
+
+    static uint32_t write_call_count = 0;
+    static uint32_t total_written = 0;
+    uint32_t buffered_before = buffered_samples;
+
+    write_call_count++;
 
     // num_samplesはステレオペア数として扱う
     for (uint32_t i = 0; i < num_samples; i++) {
@@ -152,6 +162,25 @@ uint32_t audio_out_i2s_write(const int16_t *pcm_data, uint32_t num_samples) {
         write_pos = (write_pos + 1) % (I2S_BUFFER_SIZE / 2);
         buffered_samples++;
         samples_written++;
+    }
+
+    total_written += samples_written;
+
+    // 自動開始: バッファがある程度埋まったらDMAを開始
+    // buffered_samplesはステレオペア数なので、AUDIO_BUFFER_SIZEと比較
+    // 10%でスタート（より早く開始してバッファに余裕を持たせる）
+    #define AUTO_START_THRESHOLD (AUDIO_BUFFER_SIZE / 10)  // 10%
+    if (!is_running && buffered_samples >= AUTO_START_THRESHOLD) {
+        float buffer_percent = (float)buffered_samples * 100.0f / AUDIO_BUFFER_SIZE;
+        printf("[I2S] Auto-starting DMA (buffer: %lu/%u samples, %.1f%%)\n",
+               buffered_samples, AUDIO_BUFFER_SIZE, buffer_percent);
+        audio_out_i2s_start();
+    }
+
+    // N回ごとにログ出力（頻度はconfig.hで設定）
+    if (write_call_count % STATS_LOG_FREQUENCY == 0) {
+        printf("[I2S Write] Calls: %lu, Total written: %lu, Current buffer: %lu->%lu\n",
+               write_call_count, total_written, buffered_before, buffered_samples);
     }
 
     return samples_written;
@@ -182,15 +211,17 @@ void audio_out_i2s_start(void) {
 
     printf("Starting I2S audio output...\n");
 
-    // 最初の DMA バッファを埋める
+    // ピンポンバッファ: 両方のバッファを事前に埋める（これが重要！）
     fill_dma_buffer(dma_buffer[0], I2S_DMA_BUFFER_SIZE);
+    fill_dma_buffer(dma_buffer[1], I2S_DMA_BUFFER_SIZE);
     current_dma_buffer = 0;
+    printf("  Both DMA buffers pre-filled\n");
 
     // PIO State Machine を有効化
     pio_sm_set_enabled(pio, sm, true);
     printf("  PIO SM enabled\n");
 
-    // DMA を開始
+    // DMA を開始（buffer[0]から）
     dma_channel_start(dma_channel);
     printf("  DMA started\n");
 
@@ -274,13 +305,19 @@ static void dma_handler(void) {
     if (dma_channel_get_irq0_status(dma_channel)) {
         dma_channel_acknowledge_irq0(dma_channel);
 
-        // 次のバッファに切り替え
-        current_dma_buffer = 1 - current_dma_buffer;
+        // ピンポンバッファの正しい実装:
+        // 1. 次のバッファ（すでに埋まっている）でDMAを即座に再開
+        // 2. 今終わったバッファを再充填（次回のために）
+        uint8_t finished_buffer = current_dma_buffer;
+        uint8_t next_buffer = 1 - current_dma_buffer;
 
-        // 次のDMAバッファを再充填
-        fill_dma_buffer(dma_buffer[current_dma_buffer], I2S_DMA_BUFFER_SIZE);
+        // DMAを次のバッファで即座に再起動（遅延を最小化）
+        dma_channel_set_read_addr(dma_channel, dma_buffer[next_buffer], true);
 
-        // DMA を再起動
-        dma_channel_set_read_addr(dma_channel, dma_buffer[current_dma_buffer], true);
+        // 終わったバッファを再充填（次回の使用のため）
+        fill_dma_buffer(dma_buffer[finished_buffer], I2S_DMA_BUFFER_SIZE);
+
+        // 現在のバッファインデックスを更新
+        current_dma_buffer = next_buffer;
     }
 }

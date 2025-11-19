@@ -27,13 +27,19 @@ static uint32_t current_sample_rate = AUDIO_SAMPLE_RATE;
 static btstack_sbc_decoder_state_t sbc_decoder_state;
 static btstack_sbc_mode_t sbc_mode = SBC_MODE_STANDARD;
 
-// PCM 出力バッファ
-#define SBC_MAX_CHANNELS 2
-// SBC_MAX_SAMPLES_PER_FRAME is already defined in btstack headers
-static int16_t pcm_buffer[SBC_MAX_CHANNELS * SBC_MAX_SAMPLES_PER_FRAME];
+// SBC コーデック設定（A2DP Sink用）
+// これはスマホ側に「このデバイスが対応しているSBC設定」を伝える
+static uint8_t media_sbc_codec_capabilities[] = {
+    (AVDTP_SBC_44100 << 4) | AVDTP_SBC_STEREO,  // 44.1kHz, ステレオ
+    0xFF,  // すべてのブロック長、サブバンド、割り当て方式をサポート
+    2, 53  // Min bitpool = 2, Max bitpool = 53
+};
+
+// SBC コーデック実際の設定（ネゴシエーション後に格納される）
+static uint8_t media_sbc_codec_configuration[4];
 
 // A2DP コネクション
-static uint8_t sdp_avdtp_sink_service_buffer[150];
+static uint8_t sdp_avdtp_sink_service_buffer[SDP_AVDTP_SINK_BUFFER_SIZE];
 static uint16_t a2dp_cid = 0;
 static uint8_t local_seid = 1;
 
@@ -61,7 +67,7 @@ bool bt_audio_init(void) {
         printf("ERROR: Failed to initialize CYW43\n");
         return false;
     }
-    printf("CYW43 initialized\n");
+    printf("CYW43 initialized (poll mode)\n");
 
     // HCI の初期化
     l2cap_init();
@@ -83,13 +89,14 @@ bool bt_audio_init(void) {
     sdp_register_service(sdp_avdtp_sink_service_buffer);
 
     // SBC エンドポイントを登録
+    // 重要: コーデックのcapabilitiesとconfigurationバッファを渡す
     avdtp_stream_endpoint_t *local_stream_endpoint = a2dp_sink_create_stream_endpoint(
         AVDTP_AUDIO,
         AVDTP_CODEC_SBC,
-        (uint8_t *)&sbc_decoder_state,
-        sizeof(sbc_decoder_state),
-        sdp_avdtp_sink_service_buffer,
-        sizeof(sdp_avdtp_sink_service_buffer));
+        media_sbc_codec_capabilities,      // ← このデバイスが対応するSBC設定
+        sizeof(media_sbc_codec_capabilities),
+        media_sbc_codec_configuration,     // ← ネゴシエーション後の実際の設定
+        sizeof(media_sbc_codec_configuration));
 
     if (!local_stream_endpoint) {
         printf("ERROR: Failed to create A2DP stream endpoint\n");
@@ -97,6 +104,7 @@ bool bt_audio_init(void) {
     }
 
     local_seid = avdtp_local_seid(local_stream_endpoint);
+    printf("A2DP stream endpoint created (SEID: %d)\n", local_seid);
 
     // SBC デコーダーの初期化
     btstack_sbc_decoder_init(&sbc_decoder_state, sbc_mode, &handle_pcm_data, NULL);
@@ -127,9 +135,12 @@ bool bt_audio_init(void) {
 // ============================================================================
 
 void bt_audio_run(void) {
-    // pico_cyw43_arch_none モード(background mode)では、
-    // BTstackのイベント処理は低優先度割り込みで自動的に行われる。
-    // そのため、ここで明示的に処理を呼ぶ必要はない。
+    // CYW43のポーリング（WiFi/Bluetoothチップの処理）
+    cyw43_arch_poll();
+
+    // 非同期コンテキストのポーリング（BTstackイベント処理）
+    // これがないとメディアパケットが処理されない！
+    async_context_poll(cyw43_arch_async_context());
 }
 
 // ============================================================================
@@ -163,14 +174,26 @@ void bt_audio_set_pcm_callback(pcm_data_callback_t callback) {
 static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, int sample_rate, void *context) {
     UNUSED(context);
 
-    // サンプリングレートを更新
-    if (current_sample_rate != (uint32_t)sample_rate) {
-        current_sample_rate = (uint32_t)sample_rate;
-        printf("Sample rate changed: %lu Hz\n", current_sample_rate);
+    static uint32_t pcm_callback_count = 0;
+    pcm_callback_count++;
+
+    // 最初の数回だけログ出力（デバッグ用）
+    if (pcm_callback_count <= INITIAL_PCM_LOG_COUNT) {
+        printf("[PCM] Received: %d samples, %d ch, %d Hz\n", num_samples, num_channels, sample_rate);
     }
 
-    // コールバックが設定されていればPCMデータを渡す
+    // サンプルレートの更新
+    if (current_sample_rate != (uint32_t)sample_rate) {
+        current_sample_rate = (uint32_t)sample_rate;
+        printf("Sample rate: %lu Hz\n", current_sample_rate);
+    }
+
+    // PCMコールバックに渡す
+    // 重要: BTstackのSBCデコーダーは num_samples を「ステレオペア数」として渡す
+    // つまり num_samples=128 は 128ステレオペア = 256個のint16_t (左128+右128)
+    // audio_out_i2s_write()も「ステレオペア数」を期待しているので、そのまま渡す
     if (pcm_callback) {
+        // 2で割らない！そのまま渡す
         pcm_callback(data, (uint32_t)num_samples, (uint8_t)num_channels, (uint32_t)sample_rate);
     }
 }
@@ -305,24 +328,35 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16_t size) {
     UNUSED(seid);
 
-    // RTP ヘッダーをスキップ（12バイト）
-    int pos = 12;
+    static uint32_t media_packet_count = 0;
+    static uint32_t media_total_bytes = 0;
 
-    // AVDTPメディアペイロードヘッダー（1バイト）をスキップ
-    pos++;
+    media_packet_count++;
+    media_total_bytes += (size > SBC_MEDIA_PACKET_HEADER_OFFSET) ?
+                         (size - SBC_MEDIA_PACKET_HEADER_OFFSET) : 0;
 
-    // SBCフレーム数を取得（1バイト）
-    if (pos >= size) return;
-    // uint8_t num_frames = packet[pos];
-    pos++;
-
-    // 各SBCフレームをデコード
-    while (pos < size) {
-        // 残りのデータをSBCデコーダーに渡す
-        btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
-
-        // 次のフレームへ（SBCデコーダーが自動的に処理済みバイト数を管理）
-        // 簡易実装：すべてのデータを処理したと仮定
-        break;
+    // 最初の数回だけログ出力（デバッグ用）
+    if (media_packet_count <= INITIAL_MEDIA_LOG_COUNT) {
+        printf("[MEDIA] Packet #%lu: size=%u, offset=%d, data_size=%u\n",
+               media_packet_count, size, SBC_MEDIA_PACKET_HEADER_OFFSET,
+               size - SBC_MEDIA_PACKET_HEADER_OFFSET);
     }
+
+    // N回ごとに統計を表示（頻度はconfig.hで設定）
+    if (media_packet_count % STATS_LOG_FREQUENCY == 0) {
+        printf("[MEDIA Stats] Packets: %lu, Total bytes: %lu, Avg size: %lu\n",
+               media_packet_count, media_total_bytes, media_total_bytes / media_packet_count);
+    }
+
+    // メディアパケットサイズの検証
+    if (size < SBC_MEDIA_PACKET_HEADER_OFFSET) {
+        printf("[MEDIA] ERROR: Packet too small (%u bytes, expected >= %d)\n",
+               size, SBC_MEDIA_PACKET_HEADER_OFFSET);
+        return;
+    }
+
+    // SBCデコーダーにデータを渡す（ヘッダー13バイトをスキップ）
+    btstack_sbc_decoder_process_data(&sbc_decoder_state, 0,
+                                      packet + SBC_MEDIA_PACKET_HEADER_OFFSET,
+                                      size - SBC_MEDIA_PACKET_HEADER_OFFSET);
 }

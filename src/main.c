@@ -31,13 +31,29 @@ static void pcm_data_handler(const int16_t *pcm_data, uint32_t num_samples,
     (void)channels;      // I2Sはステレオ固定
     (void)sample_rate;   // サンプルレートは設定済み
 
+    static uint32_t pcm_total_count = 0;
+    static uint32_t pcm_total_samples = 0;
+    static uint32_t pcm_dropped = 0;
+
+    pcm_total_count++;
+    pcm_total_samples += num_samples;
+
     // I2S 出力にPCMデータを書き込み
     uint32_t written = audio_out_i2s_write(pcm_data, num_samples);
 
     if (written < num_samples) {
+        uint32_t dropped = num_samples - written;
+        pcm_dropped += dropped;
 #ifdef ENABLE_DEBUG_LOG
-        printf("WARNING: Audio buffer full, dropped %lu samples\n", num_samples - written);
+        printf("WARNING: Audio buffer full, dropped %lu samples (total dropped: %lu)\n",
+               dropped, pcm_dropped);
 #endif
+    }
+
+    // N回ごとに統計を表示（頻度はconfig.hで設定）
+    if (pcm_total_count % STATS_LOG_FREQUENCY == 0) {
+        printf("[PCM Stats] Callbacks: %lu, Total samples: %lu, Dropped: %lu\n",
+               pcm_total_count, pcm_total_samples, pcm_dropped);
     }
 }
 
@@ -81,7 +97,7 @@ int main(void) {
     stdio_init_all();
 
     // 起動メッセージ
-    sleep_ms(2000);  // USB シリアル接続の安定化待ち
+    sleep_ms(USB_SERIAL_STABILIZATION_MS);  // USB シリアル接続の安定化待ち
 
     printf("\n");
     printf("================================================\n");
@@ -107,7 +123,7 @@ int main(void) {
         printf("ERROR: Failed to initialize I2S audio output\n");
         return 1;
     }
-    audio_out_i2s_start();
+    // 注意: audio_out_i2s_start() はバッファが十分に埋まったら自動的に開始されます
 
     printf("\n");
 

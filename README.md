@@ -144,8 +144,9 @@ Configuration:
   Output mode: I2S DAC
   I2S pins: DATA=26, BCLK=27, LRCLK=28
   Sample rate: 44100 Hz
-  Channels: 2
-  Buffer size: 88200 samples
+  Channels: 2 (Stereo)
+  Ring buffer: 44100 samples (1.0 sec)
+  DMA buffer: 512 samples (11.6 ms)
 
 Initializing audio output...
 I2S audio output initialized successfully
@@ -186,7 +187,7 @@ Stream started - Audio playback begins
 
 >>> Audio stream connected!
 
-[I2S] Buffer: 12345/88200 samples | Free: 75855 | Underruns: 0 | Overruns: 0
+[I2S] Buffer: 8960/44100 samples (20.3%) | Free: 35140 | Underruns: 0 | Overruns: 0
 ```
 
 ## カスタマイズ
@@ -207,10 +208,21 @@ Stream started - Audio playback begins
 
 ### バッファサイズの調整
 
+**重要**: RP2350のSRAMは264KBなので、バッファサイズには制限があります。
+
 ```c
 // 大きいほど安定するが、遅延も増える
-#define AUDIO_BUFFER_SIZE    (AUDIO_SAMPLE_RATE * 2)  // 2秒分
+// 現在の推奨設定: 1秒分（安定性と低遅延のバランス）
+#define AUDIO_BUFFER_SIZE    (AUDIO_SAMPLE_RATE * 1)  // 1秒分 = 44100サンプル
+
+// DMA バッファサイズ（通常は変更不要）
+#define DMA_BUFFER_SIZE      512  // 11.6ms分
 ```
+
+**メモリ使用量の目安**:
+- 1秒分: 約172 KB（推奨）
+- 2秒分: 約344 KB（ギリギリ可能）
+- 4秒分: 約689 KB（メモリオーバーフローで不可能）
 
 ## トラブルシューティング
 
@@ -229,9 +241,21 @@ Stream started - Audio playback begins
 
 ### 音が途切れる・ノイズが入る
 
-- バッファサイズを増やす（`AUDIO_BUFFER_SIZE` を大きくする）
-- DMA バッファサイズを調整（`DMA_BUFFER_SIZE`）
-- USB シリアルログで「Underrun」または「Overrun」をチェック
+**ソフトウェア側の確認**:
+- USB シリアルログで「Underruns」「Overruns」「Dropped」をチェック
+- バッファレベルが18-22%で安定しているか確認
+- すべてゼロであればソフトウェアは正常動作中
+
+**ハードウェア側の確認**（ソフトウェアメトリクスが正常な場合）:
+- 電源の品質（USBハブ経由の場合、直接PCに接続を試す）
+- GND配線の接続（Pico GNDとDAC GNDを確実に接続）
+- DACモジュールの品質（安価なモジュールはノイズが多い）
+- オーディオケーブルの品質とシールド
+- スピーカー/アンプとの接続
+
+**バッファ設定の調整**（上記で改善しない場合）:
+- `config.h`で設定を調整可能
+- ただし、現在の設定（1秒バッファ、10%自動開始）が最適化済み
 
 ### ビルドエラー
 
@@ -240,6 +264,25 @@ Stream started - Audio playback begins
 - `git submodule update --init` を実行
 
 ## 技術詳細
+
+### 現在の動作状態
+
+**バッファ管理**:
+- リングバッファ: 1秒分（44,100サンプル）
+- DMAバッファ: 512サンプル（11.6ms）
+- 自動開始閾値: 10%（4,410サンプル）
+- 安定動作時のバッファレベル: 18-22%
+- Underruns/Overruns/Dropped: すべて0で安定
+
+**タイミング設定**:
+- PIOクロック: 66サイクル/ステレオサンプル
+- サンプリングレート: 44,100 Hz
+- DMA割り込み優先度: 0xFF（最低、Bluetooth処理を優先）
+
+**コード品質**:
+- すべてのマジックナンバーを`config.h`に定数化
+- 統一されたログ出力フォーマット
+- 詳細なエラー検証とレポート
 
 ### アーキテクチャ
 
@@ -281,6 +324,77 @@ Stream started - Audio playback begins
 - **BTstack**: Bluetooth スタック（A2DP Sink, SBC デコーダー）
 - **Pico SDK**: ハードウェア制御（I2S, PWM, DMA, PIO）
 - **CYW43 ドライバー**: Pico W の無線チップ制御
+
+## 開発履歴と安定版
+
+### 最新の安定版（推奨）
+
+**現在のHEAD**（リファクタリング完了版）:
+- **特徴**:
+  - すべてのマジックナンバーを`config.h`に定数化
+  - コードの可読性と保守性が大幅に向上
+  - バッファ管理の最適化（18-22%で安定動作）
+  - 詳細なログとエラーレポート
+  - Underruns/Overruns/Droppedすべて0で安定
+- **技術設定**:
+  - 自動開始閾値: 10%（4,410サンプル）
+  - リングバッファ: 1秒分（44,100サンプル）
+  - DMAバッファ: 512サンプル
+  - PIOクロック: 66サイクル/ステレオサンプル
+  - DMA割り込み優先度: 0xFF（最低）
+
+### 過去の主要コミット
+
+**安定版コミット `842e9df`**（システムクロック最適化を戻した版）:
+- **説明**: システムクロックをデフォルト150MHzに戻してBluetooth接続を修正
+- **復元コマンド**:
+  ```bash
+  git checkout 842e9df
+  # または新しいブランチで
+  git checkout -b restore-842e9df 842e9df
+  ```
+
+**コミット `234a5fd`**（バッファオーバーフロー修正）:
+- **説明**: AUTO_START_THRESHOLDの計算エラーを修正
+- **修正内容**: `I2S_BUFFER_SIZE / 5` → `AUDIO_BUFFER_SIZE / 10`
+
+**コミット `239aac5`**（バッファオーバーフロー原因特定）:
+- **説明**: PIOクロック計算エラーを修正
+- **修正内容**: 128サイクル → 66サイクル
+
+**コミット `ed2b684`**（メモリオーバーフロー修正）:
+- **説明**: バッファサイズを4秒から1秒に削減
+- **理由**: RP2350のSRAM制限（264KB）に対応
+
+### 復元方法
+
+```bash
+# 最新版を使用（推奨）
+git checkout main  # またはメインブランチ名
+git pull
+
+# 特定のコミットに戻す
+git checkout <コミットID>
+
+# ビルドディレクトリをクリーンアップしてビルド
+rm -rf build
+mkdir build
+cd build
+cmake ..
+make -j4
+```
+
+### トラブルシューティング
+
+復元後にビルドエラーが出る場合：
+
+```bash
+# ビルドディレクトリをクリーン
+cd build
+rm -rf *
+cmake ..
+ninja
+```
 
 ## ライセンス
 

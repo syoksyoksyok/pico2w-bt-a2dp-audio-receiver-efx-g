@@ -1,86 +1,99 @@
 ; ============================================================================
-; PIO I2S Output Program for PCM5102 DAC
+; 修正と解説 (README)
 ; ============================================================================
 ;
-; このPIOプログラムは、PCM5102 DAC用のI2S出力を生成します。
+; 【原因: サイドセットのビット割り当てミス】
+; 元のコードでは BCLK をビット1(0b10)、LRCLK をビット0 として操作していましたが、
+; C言語側(audio_out_i2s.c)の設定では「GPIO 27(BCLK) が下位ビット(Bit 0)」
+; 「GPIO 28(LRCLK) が上位ビット(Bit 1)」となっていました。
+; この不整合により BCLK が正しく生成されず、DAC が動作していませんでした。
 ;
-; フォーマット:
-;   - 16ビット ステレオ (左右チャンネル)
-;   - MSB ファースト
-;   - I2S標準フォーマット
+; 【ハードウェア対策: 必須】
+; PCM5102A モジュールを使用する場合、必ず以下の配線を行ってください：
+;  - SCK 端子 を GND に接続 (またはハンダジャンパをショート)
+;    ※ これを行わないと DAC が内部クロックを生成できず無音になります。
 ;
-; ピン配置:
-;   - OUT pin 0: DATA (DIN)
-;   - Side-set pin 0: BCLK (BCK)
-;   - Side-set pin 1: LRCLK (LCK/WS)
-;
-; クロック設定:
-;   - BCLK = サンプルレート × 64 (16ビット × 2チャンネル × 2)
-;   - LRCLK = サンプルレート (44.1kHz)
-;
+; ============================================================================
+; 修正版 PIO コード (i2s.pio)
+; ============================================================================
 
 .program i2s_output
-.side_set 2 opt                ; 2ピンをサイドセットに使用 (BCLK, LRCLK)
+.side_set 2 opt
 
-; 左チャンネル (LRCLK = 0)
+; サイドセットのビット割り当て（C言語側の設定と一致させる）
+;   Bit 0 (LSB) = BCLK (GPIO 27)
+;   Bit 1 (MSB) = LRCLK (GPIO 28)
+
+; --- 左チャンネル (LRCLK = 0 -> Bit 1 is 0) ---
 .wrap_target
-    set x, 14           side 0b10  ; LRCLK=0 (左), BCLK=1, カウンタ初期化
+    ; カウンタ初期化, LRCLK=0, BCLK=1 (0b01)
+    set x, 14           side 0b01
 left_data:
-    out pins, 1         side 0b00  ; データ出力, BCLK=0
-    jmp x-- left_data   side 0b10  ; BCLK=1, カウント減算
+    ; データ出力, LRCLK=0, BCLK=0 (0b00)
+    out pins, 1         side 0b00
+    ; ループ & LRCLK=0, BCLK=1 (0b01)
+    jmp x-- left_data   side 0b01
 
-    out pins, 1         side 0b00  ; 最後の16ビット目, BCLK=0
-    nop                 side 0b10  ; BCLK=1
+    ; 最後の1ビット, BCLK=0 (0b00)
+    out pins, 1         side 0b00
+    ; BCLK=1 (0b01)
+    nop                 side 0b01
 
-; 右チャンネル (LRCLK = 1)
-    set x, 14           side 0b11  ; LRCLK=1 (右), BCLK=1, カウンタ初期化
+; --- 右チャンネル (LRCLK = 1 -> Bit 1 is 1) ---
+    ; カウンタ初期化, LRCLK=1, BCLK=1 (0b11)
+    set x, 14           side 0b11
 right_data:
-    out pins, 1         side 0b01  ; データ出力, BCLK=0
-    jmp x-- right_data  side 0b11  ; BCLK=1, カウント減算
+    ; データ出力, LRCLK=1, BCLK=0 (0b10)
+    out pins, 1         side 0b10
+    ; ループ & LRCLK=1, BCLK=1 (0b11)
+    jmp x-- right_data  side 0b11
 
-    out pins, 1         side 0b01  ; 最後の16ビット目, BCLK=0
-    nop                 side 0b11  ; BCLK=1
+    ; 最後の1ビット, BCLK=0 (0b10)
+    out pins, 1         side 0b10
+    ; BCLK=1 (0b11)
+    nop                 side 0b11
 .wrap
 
 % c-sdk {
 #include "hardware/clocks.h"
 #include "hardware/gpio.h"
+#include "config.h"
 
 static inline void i2s_output_program_init(PIO pio, uint sm, uint offset, uint data_pin, uint clock_pin_base, uint sample_rate) {
-    // I2S出力プログラムの初期化
-
     // DATAピンの設定
     pio_gpio_init(pio, data_pin);
     pio_sm_set_consecutive_pindirs(pio, sm, data_pin, 1, true);
 
     // BCLK, LRCLKピンの設定 (サイドセット)
-    pio_gpio_init(pio, clock_pin_base);      // BCLK
-    pio_gpio_init(pio, clock_pin_base + 1);  // LRCLK
+    // clock_pin_base     = BCLK  (Side-set Bit 0)
+    // clock_pin_base + 1 = LRCLK (Side-set Bit 1)
+    pio_gpio_init(pio, clock_pin_base);
+    pio_gpio_init(pio, clock_pin_base + 1);
     pio_sm_set_consecutive_pindirs(pio, sm, clock_pin_base, 2, true);
 
-    // State Machine設定
     pio_sm_config c = i2s_output_program_get_default_config(offset);
 
     // OUTピン設定 (DATA)
     sm_config_set_out_pins(&c, data_pin, 1);
 
-    // サイドセットピン設定 (BCLK, LRCLK)
+    // サイドセットピン設定 (BCLK がベース)
     sm_config_set_sideset_pins(&c, clock_pin_base);
 
-    // シフト設定 (32ビット = 16ビット左 + 16ビット右, MSBファースト)
-    sm_config_set_out_shift(&c, false, true, 32);  // shift_right=false (MSB first), autopull=true, threshold=32
+    // シフト設定 (32ビット, MSBファースト, 自動プル有効, 閾値32)
+    sm_config_set_out_shift(&c, false, true, 32);
 
-    // FIFOをTXのみに結合 (深さを2倍にする)
+    // FIFOをTXのみに結合
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 
     // クロック分周の計算
-    // BCLK周波数 = サンプルレート × 64
-    // PIOクロック = BCLK × 2 (BCLKの各エッジで1サイクル)
-    // 1サンプル(左右32ビット)で64 PIOクロック必要
-    float clk_div = (float)clock_get_hz(clk_sys) / (sample_rate * 64.0f * 2.0f);
+    // このPIOプログラムは1ステレオペア（32ビット）を66サイクルで出力する:
+    //   - 左チャンネル16ビット: set(1) + loop(30) + 追加(2) = 33サイクル
+    //   - 右チャンネル16ビット: set(1) + loop(30) + 追加(2) = 33サイクル
+    //   - 合計: 66サイクル
+    // したがって、PIOクロック = サンプルレート × PIO_CYCLES_PER_STEREO_SAMPLE
+    float clk_div = (float)clock_get_hz(clk_sys) / (sample_rate * (float)PIO_CYCLES_PER_STEREO_SAMPLE);
     sm_config_set_clkdiv(&c, clk_div);
 
-    // State Machineの初期化と開始
     pio_sm_init(pio, sm, offset, &c);
     pio_sm_set_enabled(pio, sm, true);
 }
