@@ -135,6 +135,12 @@ bool audio_out_i2s_init(uint32_t sample_rate, uint8_t bits, uint8_t channels) {
 uint32_t audio_out_i2s_write(const int16_t *pcm_data, uint32_t num_samples) {
     uint32_t samples_written = 0;
 
+    static uint32_t write_call_count = 0;
+    static uint32_t total_written = 0;
+    uint32_t buffered_before = buffered_samples;
+
+    write_call_count++;
+
     // num_samplesはステレオペア数として扱う
     for (uint32_t i = 0; i < num_samples; i++) {
         uint32_t free_space = I2S_BUFFER_SIZE / 2 - buffered_samples;
@@ -152,6 +158,14 @@ uint32_t audio_out_i2s_write(const int16_t *pcm_data, uint32_t num_samples) {
         write_pos = (write_pos + 1) % (I2S_BUFFER_SIZE / 2);
         buffered_samples++;
         samples_written++;
+    }
+
+    total_written += samples_written;
+
+    // 100回ごとにログ出力
+    if (write_call_count % 100 == 0) {
+        printf("[I2S Write] Calls: %lu, Total written: %lu, Current buffer: %lu->%lu\n",
+               write_call_count, total_written, buffered_before, buffered_samples);
     }
 
     return samples_written;
@@ -182,15 +196,17 @@ void audio_out_i2s_start(void) {
 
     printf("Starting I2S audio output...\n");
 
-    // 最初の DMA バッファを埋める
+    // ピンポンバッファ: 両方のバッファを事前に埋める（これが重要！）
     fill_dma_buffer(dma_buffer[0], I2S_DMA_BUFFER_SIZE);
+    fill_dma_buffer(dma_buffer[1], I2S_DMA_BUFFER_SIZE);
     current_dma_buffer = 0;
+    printf("  Both DMA buffers pre-filled\n");
 
     // PIO State Machine を有効化
     pio_sm_set_enabled(pio, sm, true);
     printf("  PIO SM enabled\n");
 
-    // DMA を開始
+    // DMA を開始（buffer[0]から）
     dma_channel_start(dma_channel);
     printf("  DMA started\n");
 
@@ -274,13 +290,19 @@ static void dma_handler(void) {
     if (dma_channel_get_irq0_status(dma_channel)) {
         dma_channel_acknowledge_irq0(dma_channel);
 
-        // 次のバッファに切り替え
-        current_dma_buffer = 1 - current_dma_buffer;
+        // ピンポンバッファの正しい実装:
+        // 1. 次のバッファ（すでに埋まっている）でDMAを即座に再開
+        // 2. 今終わったバッファを再充填（次回のために）
+        uint8_t finished_buffer = current_dma_buffer;
+        uint8_t next_buffer = 1 - current_dma_buffer;
 
-        // 次のDMAバッファを再充填
-        fill_dma_buffer(dma_buffer[current_dma_buffer], I2S_DMA_BUFFER_SIZE);
+        // DMAを次のバッファで即座に再起動（遅延を最小化）
+        dma_channel_set_read_addr(dma_channel, dma_buffer[next_buffer], true);
 
-        // DMA を再起動
-        dma_channel_set_read_addr(dma_channel, dma_buffer[current_dma_buffer], true);
+        // 終わったバッファを再充填（次回の使用のため）
+        fill_dma_buffer(dma_buffer[finished_buffer], I2S_DMA_BUFFER_SIZE);
+
+        // 現在のバッファインデックスを更新
+        current_dma_buffer = next_buffer;
     }
 }
