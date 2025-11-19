@@ -282,6 +282,71 @@ Stream started - Audio playback begins
 - **Pico SDK**: ハードウェア制御（I2S, PWM, DMA, PIO）
 - **CYW43 ドライバー**: Pico W の無線チップ制御
 
+## 安定版への復元
+
+開発中に問題が発生した場合、以下の手順で動作確認済みの安定版に戻すことができます。
+
+### 推奨：タグを使った復元
+
+```bash
+# 安定版タグの一覧を確認
+git tag
+
+# 安定版に戻す（例：good-working-state-v1）
+git checkout good-working-state-v1
+
+# または、新しいブランチを作成して復元
+git checkout -b restore-from-stable good-working-state-v1
+
+# ビルド
+cd build
+cmake ..
+ninja
+```
+
+### コミットIDを使った復元
+
+**安定版コミット（2024年）：**
+- **コミットID**: `842e9df` (短縮形) / `842e9dfdee7218448d3a2402c75b10c8a6f74c54` (完全版)
+- **説明**: Bluetooth接続が安定し、音質が良好な状態
+- **特徴**:
+  - ピンポンバッファによる音切れ防止
+  - DMA自動開始（4096サンプル蓄積後）
+  - PIOクロック66サイクル設定（正確な44.1kHz再生）
+  - DMAバッファ512サンプル（ジッター低減）
+  - リングバッファ1秒分（安定性と低レイテンシのバランス）
+
+**復元コマンド：**
+
+```bash
+# コミットIDで復元
+git checkout 842e9df
+
+# または、新しいブランチを作成して復元
+git checkout -b restore-stable 842e9df
+
+# リモートから最新を取得してから復元
+git fetch origin
+git checkout 842e9df
+
+# ビルド
+cd build
+cmake ..
+ninja
+```
+
+### トラブルシューティング
+
+復元後にビルドエラーが出る場合：
+
+```bash
+# ビルドディレクトリをクリーン
+cd build
+rm -rf *
+cmake ..
+ninja
+```
+
 ## ライセンス
 
 MIT License
