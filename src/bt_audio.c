@@ -56,8 +56,7 @@ bool bt_audio_init(void) {
         printf("ERROR: Failed to initialize CYW43\n");
         return false;
     }
-    cyw43_arch_enable_threading_mode(true);   // ← これが絶対必須！！
-    printf("CYW43 initialized (poll mode with threading)\n");
+    printf("CYW43 initialized (poll mode)\n");
 
     // HCI の初期化
     l2cap_init();
@@ -107,9 +106,6 @@ bool bt_audio_init(void) {
     hci_event_callback_registration.callback = &packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
-    // これが一番大事！デコードされたPCMを受け取るコールバック
-    btstack_sbc_decoder_set_pcm_packet_handler(&handle_pcm_data, NULL);
-
     // HCI パワーオン
     hci_power_control(HCI_POWER_ON);
 
@@ -127,7 +123,6 @@ bool bt_audio_init(void) {
 
 void bt_audio_run(void) {
     cyw43_arch_poll();
-    btstack_run_loop_poll();
 }
 
 // ============================================================================
