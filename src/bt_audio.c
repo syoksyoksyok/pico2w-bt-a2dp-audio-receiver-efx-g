@@ -14,6 +14,8 @@
 
 #include "btstack.h"
 #include "btstack_sbc.h"
+#include "avdtp.h"
+#include "avdtp_util.h"
 
 // ============================================================================
 // 内部変数
@@ -26,11 +28,6 @@ static uint32_t current_sample_rate = AUDIO_SAMPLE_RATE;
 // A2DP SBC デコーダー
 static btstack_sbc_decoder_state_t sbc_decoder_state;
 static btstack_sbc_mode_t sbc_mode = SBC_MODE_STANDARD;
-
-// PCM 出力バッファ
-#define SBC_MAX_CHANNELS 2
-// SBC_MAX_SAMPLES_PER_FRAME is already defined in btstack headers
-static int16_t pcm_buffer[SBC_MAX_CHANNELS * SBC_MAX_SAMPLES_PER_FRAME];
 
 // A2DP コネクション
 static uint8_t sdp_avdtp_sink_service_buffer[150];
@@ -305,8 +302,20 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
 static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16_t size) {
     UNUSED(seid);
-    if (size < 13) return;
-    uint8_t *sbc_data = packet + 13;
-    uint16_t sbc_size = size - 13;
-    btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, sbc_data, sbc_size);
+
+    // パケットヘッダーを正しく解析
+    int pos = 0;
+
+    // AVDTPメディアパケットヘッダーを読み取り
+    avdtp_media_packet_header_t media_header;
+    pos = avdtp_read_media_packet_header(packet, size, &pos, &media_header);
+
+    // SBCコーデックヘッダーを読み取り
+    avdtp_sbc_codec_header_t sbc_header;
+    pos = avdtp_read_sbc_codec_header(packet, size, &pos, &sbc_header);
+
+    // 残りのデータをSBCデコーダーに渡す
+    if (pos < size) {
+        btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
+    }
 }
