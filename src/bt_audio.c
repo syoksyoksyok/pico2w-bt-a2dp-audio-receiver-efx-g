@@ -14,8 +14,6 @@
 
 #include "btstack.h"
 #include "btstack_sbc.h"
-#include "avdtp.h"
-#include "avdtp_util.h"
 
 // ============================================================================
 // 内部変数
@@ -54,12 +52,12 @@ bool bt_audio_init(void) {
     printf("Initializing Bluetooth...\n");
 
     // CYW43 初期化（Pico W の Wi-Fi/Bluetooth チップ）
-    // pico_cyw43_arch_none モードを使用（バックグラウンドIRQ処理）
     if (cyw43_arch_init()) {
         printf("ERROR: Failed to initialize CYW43\n");
         return false;
     }
-    printf("CYW43 initialized (background IRQ mode)\n");
+    cyw43_arch_enable_threading_mode(true);   // ← これが絶対必須！！
+    printf("CYW43 initialized (poll mode with threading)\n");
 
     // HCI の初期化
     l2cap_init();
@@ -109,6 +107,9 @@ bool bt_audio_init(void) {
     hci_event_callback_registration.callback = &packet_handler;
     hci_add_event_handler(&hci_event_callback_registration);
 
+    // これが一番大事！デコードされたPCMを受け取るコールバック
+    btstack_sbc_decoder_set_pcm_packet_handler(&handle_pcm_data, NULL);
+
     // HCI パワーオン
     hci_power_control(HCI_POWER_ON);
 
@@ -125,9 +126,8 @@ bool bt_audio_init(void) {
 // ============================================================================
 
 void bt_audio_run(void) {
-    // pico_cyw43_arch_none モード(background mode)では、
-    // BTstackのイベント処理は低優先度割り込みで自動的に行われる。
-    // そのため、ここで明示的に処理を呼ぶ必要はない。
+    cyw43_arch_poll();
+    btstack_run_loop_poll();
 }
 
 // ============================================================================
@@ -160,16 +160,9 @@ void bt_audio_set_pcm_callback(pcm_data_callback_t callback) {
 
 static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, int sample_rate, void *context) {
     UNUSED(context);
-
-    // サンプリングレートを更新
-    if (current_sample_rate != (uint32_t)sample_rate) {
-        current_sample_rate = (uint32_t)sample_rate;
-        printf("Sample rate changed: %lu Hz\n", current_sample_rate);
-    }
-
-    // コールバックが設定されていればPCMデータを渡す
+    UNUSED(sample_rate);
     if (pcm_callback) {
-        pcm_callback(data, (uint32_t)num_samples, (uint8_t)num_channels, (uint32_t)sample_rate);
+        pcm_callback(data, num_samples / num_channels, num_channels, sample_rate);
     }
 }
 
@@ -302,20 +295,6 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
 static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16_t size) {
     UNUSED(seid);
-
-    // パケットヘッダーを正しく解析
-    int pos = 0;
-
-    // AVDTPメディアパケットヘッダーを読み取り
-    avdtp_media_packet_header_t media_header;
-    pos = avdtp_read_media_packet_header(packet, size, &pos, &media_header);
-
-    // SBCコーデックヘッダーを読み取り
-    avdtp_sbc_codec_header_t sbc_header;
-    pos = avdtp_read_sbc_codec_header(packet, size, &pos, &sbc_header);
-
-    // 残りのデータをSBCデコーダーに渡す
-    if (pos < size) {
-        btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + pos, size - pos);
-    }
+    if (size < 13) return;
+    btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + 13, size - 13);
 }
