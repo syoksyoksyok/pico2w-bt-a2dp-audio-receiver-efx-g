@@ -164,8 +164,10 @@ int main(void) {
         }
 #endif
 
-        // 短いスリープ（CPU 負荷軽減）
-        sleep_ms(1);
+        // CPU負荷軽減のため、WFI（Wait For Interrupt）を使用
+        // sleep_ms(1)は使わない！→ BTstack/CYW43の割り込み処理を遅延させて切断の原因になる
+        // tight_loop_contents();  // または __wfi(); でもOK
+        __wfi();  // 割り込みまで待機（最も効率的）
     }
 
     return 0;

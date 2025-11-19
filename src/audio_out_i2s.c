@@ -41,7 +41,9 @@ static volatile uint32_t read_pos = 0;
 static volatile uint32_t buffered_samples = 0;  // ステレオペア数
 
 // DMA バッファ（2つのバッファでピンポン方式）
-#define I2S_DMA_BUFFER_SIZE 512
+// 注意: 大きすぎるとDMA割り込みが重くなり、CYW43のBluetooth処理を妨害して切断される
+// 128サンプル = 約2.9ms@44.1kHz（安全な範囲）
+#define I2S_DMA_BUFFER_SIZE 128
 static int32_t dma_buffer[2][I2S_DMA_BUFFER_SIZE];  // 32ビット（左右16ビットずつ）
 static volatile uint8_t current_dma_buffer = 0;
 
@@ -112,7 +114,13 @@ bool audio_out_i2s_init(uint32_t sample_rate, uint8_t bits, uint8_t channels) {
     // DMA 割り込みハンドラーを設定
     dma_channel_set_irq0_enabled(dma_channel, true);
     irq_set_exclusive_handler(DMA_IRQ_0, dma_handler);
+
+    // DMA割り込み優先度を最低に設定（CYW43のBluetooth処理を妨害しないため）
+    // 0x00=最高優先度、0xC0=最低優先度
+    irq_set_priority(DMA_IRQ_0, 0xC0);
+
     irq_set_enabled(DMA_IRQ_0, true);
+    printf("  DMA IRQ priority set to lowest (0xC0)\n");
 
     // バッファをクリア
     audio_out_i2s_clear_buffer();
