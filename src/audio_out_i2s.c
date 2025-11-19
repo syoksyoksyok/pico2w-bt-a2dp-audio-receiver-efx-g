@@ -81,10 +81,11 @@ bool audio_out_i2s_init(uint32_t sample_rate, uint8_t bits, uint8_t channels) {
     offset = pio_add_program(pio, &i2s_output_program);
     printf("  PIO program loaded at offset %d\n", offset);
 
-    // BCLK周波数の計算と表示
-    uint32_t bclk_freq = sample_rate * 64;  // 16ビット × 2チャンネル × 2
-    float clk_div = (float)clock_get_hz(clk_sys) / (bclk_freq * 2.0f);
-    printf("  BCLK frequency: %lu Hz (divider: %.2f)\n", bclk_freq, clk_div);
+    // PIOクロック設定の計算と表示
+    uint32_t pio_clk_freq = sample_rate * 66;  // 66サイクル/ステレオペア
+    float clk_div = (float)clock_get_hz(clk_sys) / (float)pio_clk_freq;
+    printf("  PIO clock: %lu Hz (divider: %.2f)\n", pio_clk_freq, clk_div);
+    printf("  BCLK frequency: %lu Hz (64 × sample rate)\n", sample_rate * 64);
 
     // PIO State Machineを初期化
     i2s_output_program_init(pio, sm, offset, I2S_DATA_PIN, I2S_BCLK_PIN, sample_rate);

@@ -85,9 +85,12 @@ static inline void i2s_output_program_init(PIO pio, uint sm, uint offset, uint d
     sm_config_set_fifo_join(&c, PIO_FIFO_JOIN_TX);
 
     // クロック分周の計算
-    // BCLK = サンプルレート * 64
-    // PIOクロック = BCLK * 2 (1サイクルでBCLKの片エッジを作るため)
-    float clk_div = (float)clock_get_hz(clk_sys) / (sample_rate * 64.0f * 2.0f);
+    // このPIOプログラムは1ステレオペア（32ビット）を66サイクルで出力する:
+    //   - 左チャンネル16ビット: set(1) + loop(30) + 追加(2) = 33サイクル
+    //   - 右チャンネル16ビット: set(1) + loop(30) + 追加(2) = 33サイクル
+    //   - 合計: 66サイクル
+    // したがって、PIOクロック = サンプルレート × 66
+    float clk_div = (float)clock_get_hz(clk_sys) / (sample_rate * 66.0f);
     sm_config_set_clkdiv(&c, clk_div);
 
     pio_sm_init(pio, sm, offset, &c);
