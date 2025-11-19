@@ -156,6 +156,14 @@ void bt_audio_set_pcm_callback(pcm_data_callback_t callback) {
 static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, int sample_rate, void *context) {
     UNUSED(context);
 
+    static uint32_t pcm_callback_count = 0;
+    pcm_callback_count++;
+
+    // 最初の数回だけログ出力（デバッグ用）
+    if (pcm_callback_count <= 5) {
+        printf("[PCM] Received: %d samples, %d ch, %d Hz\n", num_samples, num_channels, sample_rate);
+    }
+
     // サンプルレートの更新
     if (current_sample_rate != (uint32_t)sample_rate) {
         current_sample_rate = (uint32_t)sample_rate;
@@ -163,9 +171,11 @@ static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, in
     }
 
     // PCMコールバックに渡す
-    // num_samplesは総サンプル数（左右含む）なので、ステレオペア数に変換
+    // num_samplesは総サンプル数（左右含む）、ステレオペア数に変換する必要がある
+    // audio_out_i2s_write()はステレオペア数を期待している
     if (pcm_callback) {
-        pcm_callback(data, (uint32_t)num_samples, (uint8_t)num_channels, (uint32_t)sample_rate);
+        uint32_t stereo_pairs = (uint32_t)num_samples / (uint8_t)num_channels;
+        pcm_callback(data, stereo_pairs, (uint8_t)num_channels, (uint32_t)sample_rate);
     }
 }
 
@@ -298,6 +308,21 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packe
 
 static void a2dp_sink_media_packet_handler(uint8_t seid, uint8_t *packet, uint16_t size) {
     UNUSED(seid);
-    if (size < 13) return;
+
+    static uint32_t media_packet_count = 0;
+    media_packet_count++;
+
+    // 最初の数回だけログ出力（デバッグ用）
+    if (media_packet_count <= 3) {
+        printf("[MEDIA] Packet #%lu: size=%u, offset=13, data_size=%u\n",
+               media_packet_count, size, size - 13);
+    }
+
+    if (size < 13) {
+        printf("[MEDIA] ERROR: Packet too small (%u bytes)\n", size);
+        return;
+    }
+
+    // SBCデコーダーにデータを渡す
     btstack_sbc_decoder_process_data(&sbc_decoder_state, 0, packet + 13, size - 13);
 }
