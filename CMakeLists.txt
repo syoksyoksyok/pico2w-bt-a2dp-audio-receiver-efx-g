@@ -31,6 +31,9 @@ add_executable(pico2w_bt_a2dp_receiver
     src/audio_out_pwm.c
 )
 
+# PIO プログラムをヘッダーに変換
+pico_generate_pio_header(pico2w_bt_a2dp_receiver ${CMAKE_CURRENT_LIST_DIR}/src/i2s.pio)
+
 # インクルードディレクトリ
 target_include_directories(pico2w_bt_a2dp_receiver PRIVATE
     ${CMAKE_CURRENT_LIST_DIR}/src
