@@ -1,0 +1,237 @@
+================================================================================
+PICO 2W BLUETOOTH A2DP AUDIO RECEIVER - COMPLETE ARCHITECTURE
+================================================================================
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          HARDWARE LAYER                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  CYW43 Chip              RP2350 Microcontroller        PCM5102A DAC       │
+│  ┌────────────┐          ┌─────────────────────┐       ┌────────────┐     │
+│  │ Bluetooth  │          │   CPU (Single)      │       │  I2S Input │     │
+│  │ Radio      │◄────────►│   2 Cores × 150MHz  │◄─────┤  I/O       │     │
+│  │ Module     │          │                     │       │ (PCM5102A) │     │
+│  │            │          │ SRAM: 264 KB        │       └────────────┘     │
+│  │ A2DP Stack │          │                     │                          │
+│  └────────────┘          │ ┌─────────────────┐ │       GPIO Pins:         │
+│                          │ │ DMA Controller  │ │       - GPIO 26: DATA    │
+│  Receives Bluetooth      │ │ (Multi-ch)      │ │       - GPIO 27: BCLK    │
+│  A2DP Packets            │ │                 │ │       - GPIO 28: LRCLK   │
+│  (SBC Compressed)        │ └─────────────────┘ │                          │
+│                          │                     │       Audio Output:      │
+│                          │ ┌─────────────────┐ │       - L/R Speakers     │
+│                          │ │ PIO (4 × SM)    │ │       - Headphones       │
+│                          │ │ (State Machines)│ │                          │
+│                          │ └─────────────────┘ │                          │
+│                          └─────────────────────┘                          │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        APPLICATION LAYER                                   │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                     main.c (ENTRY POINT)                            │  │
+│  │  - Initialize Bluetooth & I2S                                       │  │
+│  │  - Main event loop                                                  │  │
+│  │  - Register callbacks                                               │  │
+│  │  - Monitor buffer status                                            │  │
+│  │                                                                      │  │
+│  │  Global Callback: pcm_data_handler()                               │  │
+│  │    ▲                                                                │  │
+│  │    │                                                                │  │
+│  └────┼──────────────────────────────────────────────────────────────┘   │
+│       │ [PCM Data]                                                         │
+│  ┌────┴──────────────────────────────────────────────────────────────┐   │
+│  │                    bt_audio.c (Bluetooth Layer)                   │   │
+│  │                                                                    │   │
+│  │  BTstack Configuration & Management:                             │   │
+│  │  ├─ A2DP Sink Profile                                            │   │
+│  │  ├─ SBC Codec Capabilities                                       │   │
+│  │  ├─ Event Handlers                                               │   │
+│  │  └─ Connection Management                                        │   │
+│  │                                                                    │   │
+│  │  Functions:                                                       │   │
+│  │  ├─ bt_audio_init()          [Init Bluetooth]                    │   │
+│  │  ├─ bt_audio_run()           [BTstack polling]                   │   │
+│  │  ├─ a2dp_sink_media_packet_handler()  [Receive SBC frames]       │   │
+│  │  │  └─ Strips 13-byte RTP header from packets                    │   │
+│  │  │  └─ Feeds SBC data to decoder                                 │   │
+│  │  │                                                                │   │
+│  │  └─ handle_pcm_data()        [SBC Decoder Callback]              │   │
+│  │     ├─ Apply software volume (85%)                               │   │
+│  │     ├─ ★ EFFECT PROCESSOR INSERTION POINT ★                      │   │
+│  │     └─ Call pcm_callback() (registered from main)                │   │
+│  │                                                                    │   │
+│  │  Data: SBC Decoder State (BTstack library)                       │   │
+│  │                                                                    │   │
+│  └────────────────────────────────────────────────────────────────┘   │
+│       │ [PCM Stereo, 16-bit, 44.1kHz]                                  │
+│  ┌────▼──────────────────────────────────────────────────────────────┐   │
+│  │                   audio_out_i2s.c (I2S Output)                    │   │
+│  │                                                                    │   │
+│  │  Ring Buffer Management:                                          │   │
+│  │  ├─ int16_t ring_buffer[88,200]  (1 second @ 44.1kHz)            │   │
+│  │  ├─ write_pos: written by pcm_data_handler()                      │   │
+│  │  ├─ read_pos: advanced by fill_dma_buffer()                       │   │
+│  │  └─ buffered_samples: stereo pair count                           │   │
+│  │                                                                    │   │
+│  │  DMA Management:                                                  │   │
+│  │  ├─ Ping-pong buffers: dma_buffer[2][512]                        │   │
+│  │  ├─ DMA Channel: Configured via PIO DREQ                          │   │
+│  │  ├─ Interrupt: DMA_IRQ_0 (Priority 0xFF - Lowest)               │   │
+│  │  └─ Transfer: 32-bit words to PIO TX FIFO                        │   │
+│  │                                                                    │   │
+│  │  Functions:                                                       │   │
+│  │  ├─ audio_out_i2s_init()          [Initialize I2S + DMA]         │   │
+│  │  ├─ audio_out_i2s_write()         [Write to ring buffer]         │   │
+│  │  ├─ fill_dma_buffer()             [DMA buffer filling]           │   │
+│  │  ├─ dma_handler()                 [DMA IRQ handler]              │   │
+│  │  ├─ audio_out_i2s_get_buffered_samples()  [Buffer status]        │   │
+│  │  ├─ audio_out_i2s_start()         [Start playback]               │   │
+│  │  └─ audio_out_i2s_clear_buffer()  [Reset]                        │   │
+│  │                                                                    │   │
+│  │  Auto-Start Logic:                                                │   │
+│  │  └─ Trigger at 20% buffer fill (8,820 samples)                   │   │
+│  │     to prevent immediate underruns on stream start                │   │
+│  │                                                                    │   │
+│  └────────────────────────────────────────────────────────────────┘   │
+│       │ [Packed stereo samples to PIO]                                  │
+│  ┌────▼──────────────────────────────────────────────────────────────┐   │
+│  │                      i2s.pio (PIO Program)                        │   │
+│  │                  [Programmable I/O State Machine]                 │   │
+│  │                                                                    │   │
+│  │  Generates I2S Protocol:                                          │   │
+│  │  ├─ Reads 32-bit words from TX FIFO (DMA)                        │   │
+│  │  ├─ Serializes bits with proper timing                            │   │
+│  │  ├─ BCLK output (GPIO 27): 2.82 MHz (64 × 44.1kHz)               │   │
+│  │  ├─ LRCLK output (GPIO 28): 44.1 kHz (channel select)             │   │
+│  │  └─ DATA output (GPIO 26): MSB-first 16-bit samples               │   │
+│  │                                                                    │   │
+│  │  Timing: 66 PIO cycles per stereo sample                          │   │
+│  │  ├─ Left channel:  33 cycles (LRCLK=0)                           │   │
+│  │  └─ Right channel: 33 cycles (LRCLK=1)                           │   │
+│  │                                                                    │   │
+│  └────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│  Configuration:                                                          │
+│  ├─ config.h:        44.1kHz, 16-bit, stereo, GPIO pins                │
+│  ├─ btstack_config.h: BTstack settings                                  │
+│  └─ CMakeLists.txt:  Build configuration                               │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   DATA FLOW TIMING & BUFFER MANAGEMENT                      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  BLUETOOTH RECEPTION THREAD (interrupt-driven)                             │
+│  ├─ Packet arrives → CYW43 interrupt                                       │
+│  ├─ a2dp_sink_media_packet_handler() → SBC decoder                        │
+│  ├─ handle_pcm_data() called (every ~2.9ms, 128 stereo pairs)            │
+│  ├─ Software volume × 85%                                                  │
+│  ├─ [EFFECT PROCESSOR HERE]  ← INSERT POINT                               │
+│  └─ pcm_data_handler() writes to ring buffer                              │
+│     └─ Advance write_pos                                                   │
+│     └─ Increment buffered_samples                                          │
+│     └─ Check: if buffered_samples >= 8,820 → Start DMA                    │
+│                                                                             │
+│  DMA PLAYBACK THREAD (interrupt-driven)                                    │
+│  ├─ DMA_IRQ_0 fires (every ~11.6ms, 512 samples)                          │
+│  ├─ dma_handler() switches ping-pong buffers                              │
+│  ├─ fill_dma_buffer() refills completed buffer                            │
+│  │   └─ Reads from ring_buffer[read_pos]                                  │
+│  │   └─ Advances read_pos                                                  │
+│  │   └─ Decrements buffered_samples                                        │
+│  │   └─ Detects underrun (outputs 0x0000 if buffer empty)                │
+│  └─ DMA transfers to PIO TX FIFO                                          │
+│     └─ PIO SM generates I2S signals continuously                          │
+│     └─ Audio reaches PCM5102A DAC                                         │
+│     └─ Analog output to speakers                                          │
+│                                                                             │
+│  RING BUFFER DEPTH: 44,100 samples (1 second @ 44.1kHz)                   │
+│  ├─ Write rate:  128 samples / 2.9ms  = 44,100 samples/sec                │
+│  ├─ Read rate:   512 samples / 11.6ms = 44,100 samples/sec                │
+│  ├─ Min fill:    ~8,820 samples (20%, auto-start threshold)               │
+│  ├─ Safe range:  11,025 - 33,075 samples (25% - 75%)                      │
+│  └─ Total time:  1 second of audio buffered                               │
+│                                                                             │
+│  UNDERRUN/OVERRUN DETECTION:                                              │
+│  ├─ Underrun: Ring buffer empty during DMA read                           │
+│  │   └─ Cause: Bluetooth packets delayed/lost                             │
+│  │   └─ Effect: Outputs silence (0x0000)                                  │
+│  │   └─ Detection: underrun_count++                                        │
+│  │                                                                         │
+│  └─ Overrun: Ring buffer full during PCM write                            │
+│      └─ Cause: Bluetooth delivers faster than playback                    │
+│      └─ Effect: Audio samples dropped (lost)                              │
+│      └─ Detection: overrun_count++, written < num_samples                 │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                   INTERRUPT PRIORITY & TIMING                               │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  CYW43 Bluetooth (implicit highest in event loop)                         │
+│  ├─ Called continuously in main loop via bt_audio_run()                   │
+│  ├─ cyw43_arch_poll() + async_context_poll()                             │
+│  └─ Generates PCM callbacks to main.c                                     │
+│                                                                             │
+│  DMA_IRQ_0 (Priority: 0xFF = Absolute Lowest)                             │
+│  ├─ dma_handler() [~100-200µs execution]                                  │
+│  ├─ Set lowest priority to avoid blocking Bluetooth                       │
+│  ├─ Fires every ~11.6ms (512 samples)                                     │
+│  └─ Switches ping-pong buffers, refills                                   │
+│                                                                             │
+│  Main Event Loop (no interrupts disabled)                                  │
+│  ├─ Single-core processor (RP2350)                                         │
+│  ├─ async_context (from CYW43) drives event processing                    │
+│  ├─ Cooperative multitasking via tight_loop_contents()                    │
+│  └─ Never blocks or waits (sleep_ms() avoided!)                           │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      EFFECT PROCESSOR INSERTION POINT                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  Current Location: bt_audio.c, handle_pcm_data() at line 205              │
+│                                                                             │
+│  Execution Context:                                                         │
+│  ├─ Called ~86 times per second                                            │
+│  ├─ 128 stereo samples (256 int16_t) per call                             │
+│  ├─ Sample rate: 44,100 Hz (no resampling needed)                         │
+│  ├─ Format: Interleaved stereo [L1, R1, L2, R2, ..., L128, R128]          │
+│  └─ Execution window: ~2.9ms (one callback period)                        │
+│                                                                             │
+│  Data Format:                                                              │
+│  ├─ Input:  int16_t *data (128 stereo pairs = 256 samples)                │
+│  ├─ Access: data[0]=L1, data[1]=R1, data[2]=L2, data[3]=R2, ...          │
+│  ├─ Output: Modified data[] in-place (same memory)                        │
+│  └─ Channels: 2 (stereo)                                                  │
+│                                                                             │
+│  Processing Budget:                                                        │
+│  ├─ CPU: ~500-1000µs available (4µs per sample)                           │
+│  ├─ Memory: 50-100 KB available static allocation                         │
+│  ├─ Constraints:                                                           │
+│  │   ├─ NO malloc() in real-time (static init only)                       │
+│  │   ├─ Use fixed-point math (int16_t/int32_t preferred)                  │
+│  │   └─ Avoid division & floating-point where possible                    │
+│  │                                                                         │
+│  └─ Examples:                                                              │
+│      ├─ Simple IIR filters (1-2 taps): OK                                 │
+│      ├─ 16-tap FIR filter: Possible but tight                             │
+│      ├─ Reverb with <0.5s tail: Possible                                  │
+│      └─ Full convolution: Need optimization                               │
+│                                                                             │
+│  Integration Steps:                                                        │
+│  1. Create src/audio_effect.h + src/audio_effect.c                        │
+│  2. Implement: audio_effect_init(), audio_effect_process()                │
+│  3. Call audio_effect_init() in bt_audio_init()                           │
+│  4. Call audio_effect_process() in handle_pcm_data() before line 209      │
+│  5. Update CMakeLists.txt: add src/audio_effect.c                         │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+

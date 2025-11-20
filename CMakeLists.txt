@@ -28,6 +28,7 @@ add_executable(pico2w_bt_a2dp_receiver
     src/main.c
     src/bt_audio.c
     src/audio_out_i2s.c
+    src/audio_effect.c
 )
 
 # PIO プログラムをヘッダーに変換

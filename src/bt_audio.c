@@ -5,6 +5,7 @@
 
 #include "bt_audio.h"
 #include "config.h"
+#include "audio_effect.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -109,6 +110,11 @@ bool bt_audio_init(void) {
     // SBC デコーダーの初期化
     btstack_sbc_decoder_init(&sbc_decoder_state, sbc_mode, &handle_pcm_data, NULL);
 
+    // オーディオエフェクトの初期化
+    if (!audio_effect_init(AUDIO_SAMPLE_RATE)) {
+        printf("WARNING: Failed to initialize audio effect\n");
+    }
+
     // GAP（Generic Access Profile）の設定
     gap_discoverable_control(1);
     gap_set_class_of_device(BT_DEVICE_CLASS);
@@ -201,6 +207,9 @@ static void handle_pcm_data(int16_t *data, int num_samples, int num_channels, in
         }
     }
     #endif
+
+    // オーディオエフェクト適用（Beat-Repeat）
+    audio_effect_process(data, (uint32_t)num_samples, (uint8_t)num_channels);
 
     // PCMコールバックに渡す
     // 重要: BTstackのSBCデコーダーは num_samples を「ステレオペア数」として渡す
