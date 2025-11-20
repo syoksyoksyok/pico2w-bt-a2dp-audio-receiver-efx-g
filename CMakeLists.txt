@@ -30,6 +30,7 @@ add_executable(pico2w_bt_a2dp_receiver
     src/audio_out_i2s.c
     src/audio_effect.c
     src/tap_tempo.c
+    src/newlib_stubs.c
 )
 
 # PIO プログラムをヘッダーに変換
