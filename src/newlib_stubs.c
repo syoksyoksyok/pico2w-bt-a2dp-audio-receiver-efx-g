@@ -7,15 +7,28 @@
  * resolve linker errors.
  */
 
-#include <sys/lock.h>
+// Define __lock as a simple integer type for single-threaded operation
+typedef int __lock_t;
+typedef __lock_t _LOCK_T;
 
-// Dummy lock structures
-static struct __lock __lock___malloc_recursive_mutex;
-static struct __lock __lock___env_recursive_mutex;
+// Define lock structures as simple integers
+__lock_t __lock___malloc_recursive_mutex;
+__lock_t __lock___env_recursive_mutex;
+__lock_t __lock___sfp_recursive_mutex;
+__lock_t __lock___atexit_recursive_mutex;
+__lock_t __lock___at_quick_exit_mutex;
+__lock_t __lock___tz_mutex;
+__lock_t __lock___dd_hash_mutex;
+__lock_t __lock___arc4random_mutex;
 
-// Assign pointers to the lock structures
-struct __lock *__lock___malloc_recursive_mutex_ptr = &__lock___malloc_recursive_mutex;
-struct __lock *__lock___env_recursive_mutex_ptr = &__lock___env_recursive_mutex;
+// Define the structure that newlib expects
+struct __lock {
+    int dummy;
+};
+
+// Create dummy lock instances
+static struct __lock malloc_lock;
+static struct __lock env_lock;
 
 /**
  * Acquire a recursive lock
