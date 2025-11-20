@@ -15,12 +15,15 @@
 #include "config.h"
 #include "bt_audio.h"
 #include "audio_out_i2s.h"
+#include "audio_effect.h"
+#include "tap_tempo.h"
 
 // ============================================================================
 // グローバル変数
 // ============================================================================
 
 static absolute_time_t last_status_log_time;
+static float last_bpm = 0.0f;  // 前回のBPM（変更検出用）
 
 // ============================================================================
 // PCM データ受信コールバック
@@ -89,6 +92,39 @@ static void log_buffer_status(void) {
 }
 
 // ============================================================================
+// タップテンポBPM更新処理
+// ============================================================================
+
+static void update_effect_from_tap_tempo(void) {
+    // BPMが検出されているか確認
+    if (!tap_tempo_is_detected()) {
+        return;
+    }
+
+    float current_bpm = tap_tempo_get_bpm();
+
+    // BPMが変更されたらエフェクトパラメータを更新
+    if (current_bpm != last_bpm) {
+        note_division_t division = tap_tempo_get_note_division();
+        uint32_t slice_length = tap_tempo_bpm_to_slice_length(
+            current_bpm, division, AUDIO_SAMPLE_RATE);
+
+        // エフェクトパラメータを更新
+        beat_repeat_params_t params;
+        audio_effect_get_params(&params);
+        params.slice_length = slice_length;
+        audio_effect_set_params(&params);
+
+        printf("\n[EFFECT] Updated from tap tempo:\n");
+        printf("  BPM: %.1f\n", current_bpm);
+        printf("  Slice length: %lu samples (%.2f ms)\n",
+               slice_length, (float)slice_length * 1000.0f / AUDIO_SAMPLE_RATE);
+
+        last_bpm = current_bpm;
+    }
+}
+
+// ============================================================================
 // メイン関数
 // ============================================================================
 
@@ -137,6 +173,13 @@ int main(void) {
     bt_audio_set_pcm_callback(pcm_data_handler);
 
     printf("\n");
+
+    // タップテンポの初期化
+    if (!tap_tempo_init(TAP_TEMPO_BUTTON_PIN)) {
+        printf("WARNING: Failed to initialize tap tempo\n");
+    }
+
+    printf("\n");
     printf("================================================\n");
     printf("  Ready! Waiting for Bluetooth connection...\n");
     printf("================================================\n");
@@ -146,6 +189,11 @@ int main(void) {
     printf("  2. Look for '%s'\n", BT_DEVICE_NAME);
     printf("  3. Tap to connect\n");
     printf("  4. Play audio from your phone\n");
+    printf("\n");
+    printf("Tap Tempo:\n");
+    printf("  - Press the button (GPIO %d) to set BPM\n", TAP_TEMPO_BUTTON_PIN);
+    printf("  - LED will blink at the detected tempo\n");
+    printf("  - Beat-Repeat effect syncs to the BPM\n");
     printf("\n");
 
     // 最後のログ時刻を初期化
@@ -157,6 +205,12 @@ int main(void) {
     while (true) {
         // Bluetooth スタックの実行
         bt_audio_run();
+
+        // タップテンポの処理（ボタン監視、BPM計算、LED点滅）
+        tap_tempo_process();
+
+        // タップテンポからエフェクトパラメータを更新
+        update_effect_from_tap_tempo();
 
         // 接続状態の監視
         bool is_connected = bt_audio_is_connected();
