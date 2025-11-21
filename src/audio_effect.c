@@ -37,7 +37,7 @@
 #define MAX_LOOP_START         1.0f    // 最大ループ開始位置
 #define MIN_LOOP_SIZE_DECAY    0.0f    // 最小ループサイズ減衰
 #define MAX_LOOP_SIZE_DECAY    1.0f    // 最大ループサイズ減衰
-#define MAX_SLICE_SELECT       7       // 最大スライス選択（0-7）
+#define MAX_SLICE_SELECT       1       // 最大スライス選択（0-1）※RAM制限
 #define MIN_SLICE_PROBABILITY  0.0f    // 最小スライス確率
 #define MAX_SLICE_PROBABILITY  1.0f    // 最大スライス確率
 #define MAX_CLOCK_DIVIDER      8       // 最大クロック分周
@@ -49,8 +49,8 @@
 #define SAMPLE_MAX             32767   // 16ビットPCM最大値
 #define SAMPLE_MIN             -32768  // 16ビットPCM最小値
 
-// マルチスライスバッファの数
-#define NUM_SLICES             8       // 8個のスライスを保持
+// マルチスライスバッファの数（RP2350のRAM=520KBに制限される）
+#define NUM_SLICES             2       // 2個のスライスを保持（RAM制限）
 
 // ============================================================================
 // 内部変数
@@ -63,8 +63,9 @@ static beat_repeat_params_t current_params;
 // メモリ使用量: 44100 * 2 * 2 = 176,400 バイト (約172 KB)
 static int16_t slice_buffer[MAX_SLICE_LENGTH * 2];  // ステレオなので2倍
 
-// マルチスライスバッファ（8個のスライスを保持）
-// メモリ使用量: 44100 * 2 * 2 * 8 = 1,411,200 バイト (約1.38 MB)
+// マルチスライスバッファ（2個のスライスを保持、RAM制限）
+// メモリ使用量: 44100 * 2 * 2 * 2 = 352,800 バイト (約344 KB)
+// 合計メモリ使用量: 約516 KB（RP2350 RAM=520KB以内）
 static int16_t multi_slice_buffer[NUM_SLICES][MAX_SLICE_LENGTH * 2];
 static uint32_t multi_slice_lengths[NUM_SLICES];  // 各スライスの長さ
 static uint8_t current_slice_index = 0;            // 現在書き込み中のスライスインデックス

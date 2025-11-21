@@ -86,8 +86,8 @@ typedef struct {
     float loop_size_decay;
 
     // スライス選択（Slice Select）
-    // マルチスライスバッファ（0-7）のどのスライスを使うか
-    // 0 = 最新スライス、7 = 最古スライス
+    // マルチスライスバッファ（0-1）のどのスライスを使うか
+    // 0 = 最新スライス、1 = 1つ前のスライス（RAM制限により2個のみ）
     uint8_t slice_select;
 
     // スライス処理確率（Slice Probability）
