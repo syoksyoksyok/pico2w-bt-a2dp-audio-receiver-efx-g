@@ -20,6 +20,16 @@
 // ============================================================================
 
 /**
+ * @brief ピッチモード（Kammerl Beat-Repeat互換）
+ */
+typedef enum {
+    PITCH_MODE_FIXED_REVERSE = 0,  // 固定ピッチ + 逆再生対応
+    PITCH_MODE_DECREASING,         // 線形減少ピッチ
+    PITCH_MODE_INCREASING,         // 線形増加ピッチ
+    PITCH_MODE_SCRATCH,            // ビニールスクラッチ（正弦波変調）
+} pitch_mode_t;
+
+/**
  * @brief Beat-Repeatエフェクトのパラメータ
  */
 typedef struct {
@@ -60,6 +70,43 @@ typedef struct {
     // スライス開始/終了のフェード長（0.0-1.0）
     // 0.0 = フェードなし、0.1 = 10%をフェード、1.0 = 全体をフェード
     float window_shape;
+
+    // ============================================================================
+    // Kammerl Beat-Repeat オリジナル機能
+    // ============================================================================
+
+    // ループ開始位置（Loop Start）
+    // スライス内のどこからループを開始するか（0.0-1.0）
+    // 0.0 = スライス先頭、0.5 = 中央、1.0 = 末尾
+    float loop_start;
+
+    // ループサイズ減衰（Loop Size）
+    // ループサイズを徐々に減らす量（0.0-1.0）
+    // 0.0 = 減衰なし、1.0 = 最大減衰（バウンシングボール効果）
+    float loop_size_decay;
+
+    // スライス選択（Slice Select）
+    // マルチスライスバッファ（0-7）のどのスライスを使うか
+    // 0 = 最新スライス、7 = 最古スライス
+    uint8_t slice_select;
+
+    // スライス処理確率（Slice Probability）
+    // スライスを処理する確率（0.0-1.0）
+    // 0.0 = 常にバイパス、1.0 = 常に処理、0.5 = 50%の確率
+    float slice_probability;
+
+    // クロック分周（Clock Divider）
+    // 1, 2, 4, 8 のいずれか
+    // スライス長を自動的に変更（分周比に応じて）
+    uint8_t clock_divider;
+
+    // ピッチモード（Pitch Mode）
+    // ピッチ変調の種類を選択
+    pitch_mode_t pitch_mode;
+
+    // フリーズ（Freeze）
+    // true = 現在のスライスを凍結して無限ループ
+    bool freeze;
 
 } beat_repeat_params_t;
 
