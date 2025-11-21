@@ -37,7 +37,6 @@
 #define MAX_LOOP_START         1.0f    // 最大ループ開始位置
 #define MIN_LOOP_SIZE_DECAY    0.0f    // 最小ループサイズ減衰
 #define MAX_LOOP_SIZE_DECAY    1.0f    // 最大ループサイズ減衰
-#define MAX_SLICE_SELECT       1       // 最大スライス選択（0-1）※RAM制限
 #define MIN_SLICE_PROBABILITY  0.0f    // 最小スライス確率
 #define MAX_SLICE_PROBABILITY  1.0f    // 最大スライス確率
 #define MAX_CLOCK_DIVIDER      8       // 最大クロック分周
@@ -49,9 +48,6 @@
 #define SAMPLE_MAX             32767   // 16ビットPCM最大値
 #define SAMPLE_MIN             -32768  // 16ビットPCM最小値
 
-// マルチスライスバッファの数（RP2350のRAM=520KBに制限される）
-#define NUM_SLICES             2       // 2個のスライスを保持（RAM制限）
-
 // ============================================================================
 // 内部変数
 // ============================================================================
@@ -62,13 +58,6 @@ static beat_repeat_params_t current_params;
 // スライスバッファ（ステレオインターリーブ形式）
 // メモリ使用量: 44100 * 2 * 2 = 176,400 バイト (約172 KB)
 static int16_t slice_buffer[MAX_SLICE_LENGTH * 2];  // ステレオなので2倍
-
-// マルチスライスバッファ（2個のスライスを保持、RAM制限）
-// メモリ使用量: 44100 * 2 * 2 * 2 = 352,800 バイト (約344 KB)
-// 合計メモリ使用量: 約516 KB（RP2350 RAM=520KB以内）
-static int16_t multi_slice_buffer[NUM_SLICES][MAX_SLICE_LENGTH * 2];
-static uint32_t multi_slice_lengths[NUM_SLICES];  // 各スライスの長さ
-static uint8_t current_slice_index = 0;            // 現在書き込み中のスライスインデックス
 
 // スライス状態管理
 static uint32_t slice_write_pos = 0;   // 書き込み位置
@@ -100,7 +89,6 @@ static bool is_initialized = false;
 // Kammerl Beat-Repeat オリジナル機能のデフォルト値
 #define DEFAULT_LOOP_START           0.0f                     // ループ開始位置（先頭から）
 #define DEFAULT_LOOP_SIZE_DECAY      0.0f                     // ループサイズ減衰なし
-#define DEFAULT_SLICE_SELECT         0                        // 最新スライスを使用
 #define DEFAULT_SLICE_PROBABILITY    1.0f                     // 常に処理（100%）
 #define DEFAULT_CLOCK_DIVIDER        1                        // クロック分周なし
 #define DEFAULT_PITCH_MODE           PITCH_MODE_FIXED_REVERSE // 固定ピッチ
@@ -131,7 +119,6 @@ bool audio_effect_init(uint32_t sr) {
     // Kammerl Beat-Repeat オリジナル機能のデフォルト設定
     current_params.loop_start = DEFAULT_LOOP_START;
     current_params.loop_size_decay = DEFAULT_LOOP_SIZE_DECAY;
-    current_params.slice_select = DEFAULT_SLICE_SELECT;
     current_params.slice_probability = DEFAULT_SLICE_PROBABILITY;
     current_params.clock_divider = DEFAULT_CLOCK_DIVIDER;
     current_params.pitch_mode = DEFAULT_PITCH_MODE;
@@ -139,13 +126,10 @@ bool audio_effect_init(uint32_t sr) {
 
     // バッファのクリア
     memset(slice_buffer, 0, sizeof(slice_buffer));
-    memset(multi_slice_buffer, 0, sizeof(multi_slice_buffer));
-    memset(multi_slice_lengths, 0, sizeof(multi_slice_lengths));
     slice_write_pos = 0;
     slice_read_pos_f = 0.0f;
     repeat_counter = 0;
     is_repeating = false;
-    current_slice_index = 0;
     pitch_mod_phase = 0;
 
     is_initialized = true;
@@ -256,13 +240,6 @@ static inline float validate_loop_size_decay(float decay) {
 }
 
 /**
- * @brief スライス選択を検証して範囲内にクランプ
- */
-static inline uint8_t validate_slice_select(uint8_t select) {
-    return (select > MAX_SLICE_SELECT) ? MAX_SLICE_SELECT : select;
-}
-
-/**
  * @brief スライス確率を検証して範囲内にクランプ
  */
 static inline float validate_slice_probability(float prob) {
@@ -309,7 +286,6 @@ void audio_effect_set_params(const beat_repeat_params_t *params) {
     // Kammerl Beat-Repeat オリジナル機能のパラメータを検証
     current_params.loop_start = validate_loop_start(params->loop_start);
     current_params.loop_size_decay = validate_loop_size_decay(params->loop_size_decay);
-    current_params.slice_select = validate_slice_select(params->slice_select);
     current_params.slice_probability = validate_slice_probability(params->slice_probability);
     current_params.clock_divider = validate_clock_divider(params->clock_divider);
     current_params.pitch_mode = validate_pitch_mode(params->pitch_mode);
@@ -326,9 +302,9 @@ void audio_effect_set_params(const beat_repeat_params_t *params) {
     printf("  pitch=%.2f, reverse=%d, stutter=%d, window=%.2f\n",
            current_params.pitch_shift, current_params.reverse,
            current_params.stutter_enabled, current_params.window_shape);
-    printf("  loop_start=%.2f, loop_decay=%.2f, slice_sel=%u, probability=%.2f\n",
+    printf("  loop_start=%.2f, loop_decay=%.2f, probability=%.2f\n",
            current_params.loop_start, current_params.loop_size_decay,
-           current_params.slice_select, current_params.slice_probability);
+           current_params.slice_probability);
     printf("  clock_div=%u, pitch_mode=%d, freeze=%d\n",
            current_params.clock_divider, current_params.pitch_mode, current_params.freeze);
 }
@@ -344,13 +320,10 @@ void audio_effect_get_params(beat_repeat_params_t *params) {
 
 void audio_effect_reset(void) {
     memset(slice_buffer, 0, sizeof(slice_buffer));
-    memset(multi_slice_buffer, 0, sizeof(multi_slice_buffer));
-    memset(multi_slice_lengths, 0, sizeof(multi_slice_lengths));
     slice_write_pos = 0;
     slice_read_pos_f = 0.0f;
     repeat_counter = 0;
     is_repeating = false;
-    current_slice_index = 0;
     pitch_mod_phase = 0;
     printf("Effect reset\n");
 }
@@ -517,36 +490,6 @@ static inline bool check_repeat_end(uint32_t slice_length) {
 // ============================================================================
 
 /**
- * @brief マルチスライスバッファに現在のスライスをコピー
- */
-static inline void save_slice_to_multi_buffer(uint32_t slice_length) {
-    // リングバッファとして次のインデックスに保存
-    current_slice_index = (current_slice_index + 1) % NUM_SLICES;
-
-    // スライスをコピー
-    uint32_t copy_size = slice_length * STEREO_CHANNELS * sizeof(int16_t);
-    memcpy(multi_slice_buffer[current_slice_index], slice_buffer, copy_size);
-    multi_slice_lengths[current_slice_index] = slice_length;
-}
-
-/**
- * @brief 選択されたスライスバッファから読み取り
- * @param slice_idx スライス選択インデックス（0 = 最新、7 = 最古）
- */
-static inline int16_t read_from_multi_slice(uint8_t slice_idx, uint32_t pos, bool is_left) {
-    // インデックスを逆順に変換（0 = 最新）
-    uint8_t actual_idx = (current_slice_index - slice_idx + NUM_SLICES) % NUM_SLICES;
-
-    uint32_t slice_len = multi_slice_lengths[actual_idx];
-    if (slice_len == 0 || pos >= slice_len) {
-        return 0;  // 無効なスライス
-    }
-
-    uint32_t ch_offset = is_left ? LEFT_CHANNEL : RIGHT_CHANNEL;
-    return multi_slice_buffer[actual_idx][pos * STEREO_CHANNELS + ch_offset];
-}
-
-/**
  * @brief スライス処理確率を判定（0.0-1.0）
  * @return true処理する, false バイパス
  */
@@ -663,9 +606,6 @@ void audio_effect_process(int16_t *data, uint32_t num_samples, uint8_t num_chann
         if (slice_write_pos >= active_slice_length) {
             slice_write_pos = 0;
 
-            // マルチスライスバッファに保存
-            save_slice_to_multi_buffer(active_slice_length);
-
             if (!is_repeating && !current_params.freeze) {
                 // スライス確率チェック
                 if (check_slice_probability()) {
@@ -696,32 +636,19 @@ void audio_effect_process(int16_t *data, uint32_t num_samples, uint8_t num_chann
             float pitch_mult = calculate_pitch_for_mode((uint32_t)slice_read_pos_f,
                                                          effective_loop_length);
 
-            // マルチスライスバッファまたは現在のスライスから読み取り
-            if (current_params.slice_select == 0) {
-                // 現在のスライス（slice_buffer）から読み取り
-                uint32_t read_idx = (uint32_t)adjusted_read_pos;
+            // 現在のスライス（slice_buffer）から読み取り
+            uint32_t read_idx = (uint32_t)adjusted_read_pos;
 
-                if (current_params.reverse) {
-                    read_idx = loop_end - 1 - ((uint32_t)slice_read_pos_f % effective_loop_length);
-                }
+            if (current_params.reverse) {
+                read_idx = loop_end - 1 - ((uint32_t)slice_read_pos_f % effective_loop_length);
+            }
 
-                if (read_idx < active_slice_length) {
-                    uint32_t buf_idx = read_idx * STEREO_CHANNELS;
-                    repeat_l = slice_buffer[buf_idx + LEFT_CHANNEL];
-                    repeat_r = slice_buffer[buf_idx + RIGHT_CHANNEL];
-                } else {
-                    repeat_l = repeat_r = 0;
-                }
+            if (read_idx < active_slice_length) {
+                uint32_t buf_idx = read_idx * STEREO_CHANNELS;
+                repeat_l = slice_buffer[buf_idx + LEFT_CHANNEL];
+                repeat_r = slice_buffer[buf_idx + RIGHT_CHANNEL];
             } else {
-                // マルチスライスバッファから読み取り
-                uint32_t read_idx = (uint32_t)adjusted_read_pos;
-
-                if (current_params.reverse) {
-                    read_idx = loop_end - 1 - ((uint32_t)slice_read_pos_f % effective_loop_length);
-                }
-
-                repeat_l = read_from_multi_slice(current_params.slice_select, read_idx, true);
-                repeat_r = read_from_multi_slice(current_params.slice_select, read_idx, false);
+                repeat_l = repeat_r = 0;
             }
 
             // ウィンドウシェイプ（フェードイン/アウト）を適用
