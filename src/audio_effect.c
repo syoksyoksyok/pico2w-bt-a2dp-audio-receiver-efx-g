@@ -82,7 +82,7 @@ bool audio_effect_init(uint32_t sr) {
     // バッファのクリア
     memset(slice_buffer, 0, sizeof(slice_buffer));
     slice_write_pos = 0;
-    slice_read_pos = 0;
+    slice_read_pos_f = 0.0f;
     repeat_counter = 0;
     is_repeating = false;
 
@@ -106,8 +106,8 @@ bool audio_effect_init(uint32_t sr) {
     }
     printf("Window Shape: %.2f\n", current_params.window_shape);
     printf("Effect: %s\n", current_params.enabled ? "ENABLED" : "DISABLED");
-    printf("Buffer Size: %u samples (%u bytes)\n",
-           MAX_SLICE_LENGTH, (uint32_t)sizeof(slice_buffer));
+    printf("Buffer Size: %lu samples (%lu bytes)\n",
+           (unsigned long)MAX_SLICE_LENGTH, (unsigned long)sizeof(slice_buffer));
     printf("========================================\n\n");
 
     return true;
@@ -124,7 +124,7 @@ void audio_effect_set_params(const beat_repeat_params_t *params) {
     uint32_t slice_len = params->slice_length;
     if (slice_len > MAX_SLICE_LENGTH) {
         slice_len = MAX_SLICE_LENGTH;
-        printf("WARNING: Slice length clamped to %lu\n", MAX_SLICE_LENGTH);
+        printf("WARNING: Slice length clamped to %lu\n", (unsigned long)MAX_SLICE_LENGTH);
     }
     if (slice_len < 128) {  // 最小128サンプル（約3ms @ 44.1kHz）
         slice_len = 128;
