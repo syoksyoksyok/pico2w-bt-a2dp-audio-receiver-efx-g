@@ -23,8 +23,8 @@
 #define TAP_TIMEOUT_MS    2000
 
 // BPM範囲制限
-#define MIN_BPM  60
-#define MAX_BPM  200
+#define MIN_BPM  30
+#define MAX_BPM  303
 
 // デフォルトBPM（タップなしの初期値）
 #define DEFAULT_BPM  120
