@@ -39,9 +39,27 @@ typedef struct {
     // エフェクトの有効/無効
     bool enabled;
 
-    // ピッチシフト（将来的に実装予定）
+    // ピッチシフト（実装済み）
     // 1.0 = 元のピッチ、2.0 = 1オクターブ上、0.5 = 1オクターブ下
-    // float pitch_shift;
+    // 範囲: 0.25 - 4.0
+    float pitch_shift;
+
+    // 逆再生（Reverse Playback）
+    // true = スライスを逆方向に再生
+    bool reverse;
+
+    // スタッター（Stutter Effect）
+    // true = 短いスライスを高速リピート
+    bool stutter_enabled;
+
+    // スタッタースライス長（サンプル数）
+    // スタッターON時の短いスライス長（例: 0.01秒 = 441サンプル）
+    uint32_t stutter_slice_length;
+
+    // ウィンドウシェイプ（Window Shape）
+    // スライス開始/終了のフェード長（0.0-1.0）
+    // 0.0 = フェードなし、0.1 = 10%をフェード、1.0 = 全体をフェード
+    float window_shape;
 
 } beat_repeat_params_t;
 
