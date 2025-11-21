@@ -179,6 +179,23 @@ int main(void) {
         printf("WARNING: Failed to initialize tap tempo\n");
     }
 
+    // 起動時にBPM 120を設定
+    printf("\n");
+    printf("Setting default BPM: 120\n");
+    note_division_t default_division = tap_tempo_get_note_division();
+    uint32_t default_slice_length = tap_tempo_bpm_to_slice_length(
+        120.0f, default_division, AUDIO_SAMPLE_RATE);
+
+    beat_repeat_params_t params;
+    audio_effect_get_params(&params);
+    params.slice_length = default_slice_length;
+    audio_effect_set_params(&params);
+
+    last_bpm = 120.0f;  // BPM 120で初期化
+
+    printf("Effect initialized with BPM 120 (%.2f ms slice)\n",
+           (float)default_slice_length * 1000.0f / AUDIO_SAMPLE_RATE);
+
     printf("\n");
     printf("================================================\n");
     printf("  Ready! Waiting for Bluetooth connection...\n");

@@ -54,10 +54,10 @@ bool tap_tempo_init(uint8_t button_gpio) {
     memset(&state, 0, sizeof(state));
     state.current_bpm = DEFAULT_BPM;
     state.note_division = NOTE_SIXTEENTH;  // デフォルト：16分音符
-    state.bpm_detected = false;
+    state.bpm_detected = true;  // 起動時からBPM 120で動作
 
     button_last_state = gpio_get(button_pin);
-    last_beat_time = 0;
+    last_beat_time = to_ms_since_boot(get_absolute_time());  // 現在時刻で初期化
     led_is_on = false;
 
     is_initialized = true;
