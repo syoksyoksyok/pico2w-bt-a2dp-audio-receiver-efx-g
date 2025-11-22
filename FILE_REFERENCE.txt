@@ -1,0 +1,230 @@
+COMPLETE FILE REFERENCE WITH ABSOLUTE PATHS
+=============================================
+
+Core Source Files:
+─────────────────────────────────────────────────────────────────────
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/main.c
+├─ Lines 29-58:   pcm_data_handler() - PCM callback handler
+├─ Lines 64-89:   log_buffer_status() - Buffer monitoring
+└─ Lines 95-189:  main() - Application entry point
+
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/bt_audio.c
+├─ Lines 59-131:   bt_audio_init() - Bluetooth initialization
+├─ Lines 174-213:  handle_pcm_data() - SBC decoder callback [EFFECT INSERTION POINT]
+├─ Lines 342-376:  a2dp_sink_media_packet_handler() - Packet reception
+└─ Lines 137-144:  bt_audio_run() - Main loop processing
+
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/bt_audio.h
+├─ Lines 12-16:    bt_audio_init() declaration
+├─ Lines 18-22:    bt_audio_run() declaration
+└─ Lines 37-44:    PCM data callback type definition
+
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/audio_out_i2s.c
+├─ Lines 36-42:    Ring buffer definition & variables
+├─ Lines 69-133:   audio_out_i2s_init() - I2S initialization
+├─ Lines 139-187:  audio_out_i2s_write() - Write to ring buffer
+├─ Lines 172:      AUTO_START_THRESHOLD (20% fill level)
+├─ Lines 280-298:  fill_dma_buffer() - DMA buffer filling
+└─ Lines 304-323:  dma_handler() - DMA interrupt handler
+
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/audio_out_i2s.h
+├─ Lines 19:       audio_out_i2s_init() declaration
+├─ Lines 27:       audio_out_i2s_write() declaration
+└─ Lines 39:       audio_out_i2s_get_buffered_samples() declaration
+
+Configuration Files:
+─────────────────────────────────────────────────────────────────────
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/config.h
+├─ Line 36:        AUDIO_SAMPLE_RATE = 44100 Hz
+├─ Line 39:        AUDIO_BITS_PER_SAMPLE = 16
+├─ Line 42:        AUDIO_CHANNELS = 2
+├─ Line 52:        AUDIO_BUFFER_SIZE = 44100 samples
+├─ Line 55:        DMA_BUFFER_SIZE = 512
+├─ Line 97:        SBC_MEDIA_PACKET_HEADER_OFFSET = 13
+├─ Line 117:       SOFTWARE_VOLUME_PERCENT = 85
+└─ Line 31-33:     I2S GPIO Pin definitions
+
+Hardware Interface:
+─────────────────────────────────────────────────────────────────────
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/i2s.pio
+├─ Lines 20-55:    PIO Program (Assembly-like)
+├─ Lines 57-101:   C-SDK initialization function
+└─ Lines 62-99:    i2s_output_program_init() - PIO setup
+
+Build Configuration:
+─────────────────────────────────────────────────────────────────────
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/CMakeLists.txt
+├─ Lines 27-31:    add_executable() - Source files list
+├─ Lines 47-58:    target_link_libraries() - Required libraries
+└─ Line 34:        pico_generate_pio_header() - PIO compilation
+
+Documentation:
+─────────────────────────────────────────────────────────────────────
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/README.md
+├─ Hardware requirements
+├─ Setup instructions
+└─ Configuration guide
+
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/WIRING.md
+├─ I2S DAC pinout
+├─ PCM5102A configuration
+└─ Hardware diagrams
+
+Board Support:
+─────────────────────────────────────────────────────────────────────
+/home/user/pico2w-bt-a2dp-audio-receiver-efx-g/boards/pico2_w.h
+└─ Pico 2 W board definitions
+
+
+KEY FUNCTION CALL HIERARCHY
+════════════════════════════════════════════════════════════════════
+
+Main Event Loop:
+  main.c:157-186 (while loop)
+    ├── bt_audio_run() [bt_audio.c:137]
+    │   ├── cyw43_arch_poll()
+    │   └── async_context_poll()
+    │       └── BTstack event processing
+    │           └── a2dp_sink_media_packet_handler() [bt_audio.c:342]
+    │               └── btstack_sbc_decoder_process_data()
+    │                   └── handle_pcm_data() [bt_audio.c:174]
+    │                       ├── Software volume scaling [lines 191-203]
+    │                       ├── [EFFECT PROCESSOR INSERTION POINT]
+    │                       └── pcm_callback() → pcm_data_handler() [main.c:29]
+    │                           └── audio_out_i2s_write() [audio_out_i2s.c:139]
+    │                               ├── Write to ring buffer
+    │                               └── Check auto-start [line 172]
+    │
+    ├── Buffer monitoring [main.c:176-181]
+    │   └── log_buffer_status() [main.c:64]
+    │       └── audio_out_i2s_get_buffered_samples() [audio_out_i2s.c:201]
+    │
+    └── tight_loop_contents() (no blocking)
+
+DMA Interrupt (Every 11.6ms):
+  dma_handler() [audio_out_i2s.c:304]
+    ├── Check DMA interrupt status
+    ├── dma_channel_acknowledge_irq0()
+    ├── Switch to next buffer
+    └── fill_dma_buffer() [audio_out_i2s.c:280]
+        └── Read from ring_buffer[]
+        └── Check for underrun
+
+
+BUFFER DATA FLOW WITH SIZES
+════════════════════════════════════════════════════════════════════
+
+SBC Decoder Output:
+  ├── Per call: 128 stereo samples
+  ├── Format: int16_t array (256 elements)
+  └── Interval: ~2.9ms (344 times/sec)
+
+Ring Buffer (audio_out_i2s.c:36-41):
+  ├── Total capacity: 44,100 samples (88,200 bytes)
+  ├── Write: 128 samples every 2.9ms
+  ├── Read: 512 samples every 11.6ms
+  ├── Min fill: 8,820 samples (20%, auto-start)
+  └── Safe range: 11,025 - 33,075 (25-75%)
+
+DMA Buffers (audio_out_i2s.c:48):
+  ├── Buffer 0: int32_t[512] (2,048 bytes)
+  ├── Buffer 1: int32_t[512] (2,048 bytes)
+  ├── Interval: ~11.6ms per buffer
+  └── Format: 32-bit words with [L16|R16] packed
+
+I2S Output (i2s.pio):
+  ├── GPIO 26 (DATA): Serial audio bits
+  ├── GPIO 27 (BCLK): 2.82 MHz bit clock
+  ├── GPIO 28 (LRCLK): 44.1 kHz channel select
+  └── DAC module PCM5102A: Analog output
+
+
+CRITICAL CONFIGURATION VALUES
+════════════════════════════════════════════════════════════════════
+
+All in /home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/config.h:
+
+├─ Line 36:   AUDIO_SAMPLE_RATE = 44100
+├─ Line 39:   AUDIO_BITS_PER_SAMPLE = 16
+├─ Line 42:   AUDIO_CHANNELS = 2
+├─ Line 52:   AUDIO_BUFFER_SIZE = 44100
+├─ Line 55:   DMA_BUFFER_SIZE = 512
+├─ Line 58:   BUFFER_LOW_THRESHOLD = 11025
+├─ Line 59:   BUFFER_HIGH_THRESHOLD = 33075
+├─ Line 69:   BUFFER_STATUS_LOG_INTERVAL_MS = 5000
+├─ Line 72:   STATS_LOG_FREQUENCY = 100
+├─ Line 97:   SBC_MEDIA_PACKET_HEADER_OFFSET = 13
+├─ Line 117:  SOFTWARE_VOLUME_PERCENT = 85
+├─ Line 124:  DMA_IRQ_PRIORITY = 0xFF (absolute lowest)
+├─ Line 31:   I2S_DATA_PIN = 26
+├─ Line 32:   I2S_BCLK_PIN = 27
+└─ Line 33:   I2S_LRCLK_PIN = 28
+
+
+EXPECTED PERFORMANCE METRICS
+════════════════════════════════════════════════════════════════════
+
+PCM Callback Frequency:
+  44,100 samples/sec ÷ 128 samples/call = 344.5 calls/sec
+  ≈ 1 call every 2.9ms
+
+DMA Interrupt Frequency:
+  44,100 samples/sec ÷ 512 samples/call = 86.1 calls/sec
+  ≈ 1 interrupt every 11.6ms
+
+Ring Buffer Latency:
+  At 20% fill (8,820 samples):
+  8,820 samples ÷ 44,100 samples/sec = 0.2 seconds = 200ms (stream start)
+  
+  Typical operation (50% fill):
+  22,050 samples ÷ 44,100 = 0.5 seconds buffered
+
+Total System Latency:
+  Bluetooth + SBC + Ring buffer + DMA + I2S:
+  ~40-70ms (acceptable for audio)
+
+Data Rate:
+  44,100 Hz × 16 bits × 2 channels = 1,411,200 bits/sec = 1.41 Mbps
+
+I2S Bit Clock:
+  64 bits per stereo sample × 44,100 Hz = 2,822,400 Hz ≈ 2.82 MHz
+
+
+WHERE TO INSERT EFFECT PROCESSOR
+════════════════════════════════════════════════════════════════════
+
+Optimal Location: /home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/bt_audio.c
+
+Function: handle_pcm_data() [lines 174-213]
+Insertion point: Between line 203 and line 209
+
+Current code (lines 205-212):
+────────────────────────────────────────
+    // PCM callback to ring buffer
+    if (pcm_callback) {
+        pcm_callback(data, (uint32_t)num_samples, (uint8_t)num_channels, 
+                    (uint32_t)sample_rate);
+    }
+────────────────────────────────────────
+
+Modified code (with effect processor):
+────────────────────────────────────────
+    // Apply audio effects
+    if (pcm_callback) {
+        // ★ Call effect processor here
+        audio_effect_process(data, num_samples * num_channels, num_channels);
+        
+        // Then send to output buffer
+        pcm_callback(data, (uint32_t)num_samples, (uint8_t)num_channels, 
+                    (uint32_t)sample_rate);
+    }
+────────────────────────────────────────
+
+Files to create:
+  /home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/audio_effect.h
+  /home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/audio_effect.c
+
+Files to modify:
+  /home/user/pico2w-bt-a2dp-audio-receiver-efx-g/src/bt_audio.c (add #include)
+  /home/user/pico2w-bt-a2dp-audio-receiver-efx-g/CMakeLists.txt (add source file)
+

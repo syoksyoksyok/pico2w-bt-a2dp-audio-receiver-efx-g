@@ -28,6 +28,9 @@ add_executable(pico2w_bt_a2dp_receiver
     src/main.c
     src/bt_audio.c
     src/audio_out_i2s.c
+    src/audio_effect.c
+    src/tap_tempo.c
+    src/newlib_stubs.c
 )
 
 # PIO プログラムをヘッダーに変換
@@ -46,6 +49,8 @@ set(CYW43_LWIP 0)
 # リンクするライブラリ
 target_link_libraries(pico2w_bt_a2dp_receiver
     pico_stdlib
+    pico_malloc                # メモリ管理（newlibロック関数の実装）
+    pico_mem_ops              # メモリ操作の最適化
     pico_cyw43_arch_poll       # Pollモード（polling必要）
     pico_btstack_classic
     pico_btstack_ble           # CYW43ドライバーが必要とするため有効化
